@@ -579,7 +579,7 @@ function renderHomeCharts(data){
         {name:'炉数',type:'bar',data:sorted.map(d=>num(d.furnace)),itemStyle:{color:'#1a73e8'}},
         {name:'板件数量',type:'line',yAxisIndex:1,data:sorted.map(d=>num(d.board_count)),itemStyle:{color:'#ff9800'},smooth:true}
       ]
-    });
+    }, true);
   }else document.getElementById('chart1Card').classList.add('hidden');
 
   if(displayConfig['chart_chartAvgDuration']){
@@ -587,11 +587,12 @@ function renderHomeCharts(data){
     if(!chart2Inst)chart2Inst=echarts.init(document.getElementById('chart2'));
     chart2Inst.setOption({
       tooltip:{trigger:'axis',formatter:p=>p[0].name+'<br>平均时长: '+p[0].value.toFixed(1)+' min'},
+      legend:{show:false},
       grid:{left:50,right:20,top:20,bottom:60},
       xAxis:{type:'category',data:names,axisLabel:{rotate:30,fontSize:10}},
       yAxis:{type:'value',name:'min'},
       series:[{type:'bar',data:sorted.map(d=>num(d.furnace)>0?num(d.duration_min)/num(d.furnace):0),itemStyle:{color:'#4caf50'}}]
-    });
+    }, true);
   }else document.getElementById('chart2Card').classList.add('hidden');
 
   if(displayConfig['chart_chartBoardRank']){
@@ -603,7 +604,7 @@ function renderHomeCharts(data){
       xAxis:{type:'value'},
       yAxis:{type:'category',data:[...names].reverse(),axisLabel:{fontSize:11}},
       series:[{type:'bar',data:sorted.map(d=>num(d.board_count)).reverse(),itemStyle:{color:'#1a73e8'},label:{show:true,position:'right',fontSize:11}}]
-    });
+    }, true);
   }else document.getElementById('chart3Card').classList.add('hidden');
 
   // 部件统计图表
@@ -622,7 +623,7 @@ function renderPartsChart(stats,containerId){
     xAxis:{type:'value'},
     yAxis:{type:'category',data:[...top20].map(d=>d.part_name).reverse(),axisLabel:{fontSize:11}},
     series:[{type:'bar',data:[...top20].map(d=>num(d.count)).reverse(),itemStyle:{color:'#9c27b0'},label:{show:true,position:'right',fontSize:11}}]
-  });
+  }, true);
   if(containerId==='chartParts')chartPartsInst=inst;
   else detailPartsInst=inst;
 }
@@ -746,7 +747,7 @@ function renderDetail(){
       {name:'炉数',type:'bar',data:dateSorted.map(d=>num(d.furnace)),itemStyle:{color:'#1a73e8'}},
       {name:'板件数量',type:'line',yAxisIndex:1,data:dateSorted.map(d=>num(d.board_count)),itemStyle:{color:'#ff9800'},smooth:true}
     ]
-  });
+  }, true);
 
   // 部件图表
   document.getElementById('detailPartsTitle').textContent=currentCustomer+' - 部件数量统计';
@@ -947,7 +948,12 @@ function updateDateRange(data, elementId, isDaily){
     minDate=new Date(Math.min(...starts));
     maxDate=new Date(Math.max(...ends));
   }
-  el.textContent=formatDate(minDate)+' ~ '+formatDate(maxDate)+'（共 '+data.length+' 个客户/天）';
+  const dayCount = Math.floor((maxDate - minDate) / (1000 * 60 * 60 * 24)) + 1;
+  if(isDaily){
+    el.textContent=formatDate(minDate)+' ~ '+formatDate(maxDate)+'（共 '+data.length+' 天）';
+  }else{
+    el.textContent=formatDate(minDate)+' ~ '+formatDate(maxDate)+'（共 '+data.length+' 个客户 / 共 '+dayCount+' 天）';
+  }
 }
 function exportExcel(){
   if(!currentCustomer){showToast('请先选择一个客户','error');return;}

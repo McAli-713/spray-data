@@ -31,12 +31,13 @@ async function initDB() {
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS col_config JSONB DEFAULT \'{}\'');
     } catch (e) { /* 已存在则忽略 */ }
 
-    // 子账号权限表（一个子账号可有多条权限，对应不同客户/日期范围）
+    // 子账号权限表（一个子账号=一套配置：多选客户+日期范围+列权限+导入/导出总开关）
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_permissions (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         customer_name VARCHAR(200),
+        customers JSONB DEFAULT '[]',
         date_start DATE,
         date_end DATE,
         allowed_columns JSONB DEFAULT '[]',
@@ -45,6 +46,10 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // 兼容旧表：增加 customers 字段
+    try {
+      await client.query('ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS customers JSONB DEFAULT \'[]\'');
+    } catch (e) { /* 已存在则忽略 */ }
 
     // 作业记录表
     await client.query(`
@@ -149,6 +154,7 @@ async function listUsers() {
     SELECT u.id, u.username, u.role, u.is_active, u.created_at,
            COALESCE(json_agg(json_build_object(
              'id', p.id, 'customer_name', p.customer_name,
+             'customers', COALESCE(p.customers, '[]'::jsonb),
              'date_start', p.date_start, 'date_end', p.date_end,
              'allowed_columns', p.allowed_columns,
              'can_import', p.can_import, 'can_export', p.can_export
@@ -205,20 +211,24 @@ async function getUserPermissions(userId) {
 }
 
 async function addPermission(userId, perm) {
+  const customers = Array.isArray(perm.customers) ? perm.customers : [];
   const result = await pool.query(
-    `INSERT INTO user_permissions (user_id, customer_name, date_start, date_end, allowed_columns, can_import, can_export)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [userId, perm.customer_name || null, perm.date_start || null, perm.date_end || null,
+    `INSERT INTO user_permissions (user_id, customer_name, customers, date_start, date_end, allowed_columns, can_import, can_export)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [userId, perm.customer_name || null, JSON.stringify(customers),
+     perm.date_start || null, perm.date_end || null,
      JSON.stringify(perm.allowed_columns || []), perm.can_import ? true : false, perm.can_export ? true : false]
   );
   return result.rows[0];
 }
 
 async function updatePermission(id, perm) {
+  const customers = Array.isArray(perm.customers) ? perm.customers : [];
   const result = await pool.query(
-    `UPDATE user_permissions SET customer_name=$2, date_start=$3, date_end=$4,
-       allowed_columns=$5, can_import=$6, can_export=$7 WHERE id=$1 RETURNING *`,
-    [id, perm.customer_name || null, perm.date_start || null, perm.date_end || null,
+    `UPDATE user_permissions SET customer_name=$2, customers=$3, date_start=$4, date_end=$5,
+       allowed_columns=$6, can_import=$7, can_export=$8 WHERE id=$1 RETURNING *`,
+    [id, perm.customer_name || null, JSON.stringify(customers),
+     perm.date_start || null, perm.date_end || null,
      JSON.stringify(perm.allowed_columns || []), perm.can_import ? true : false, perm.can_export ? true : false]
   );
   return result.rows[0] || null;
@@ -238,18 +248,18 @@ async function checkUserAccess(userId, customerName, date) {
   const perms = await getUserPermissions(userId);
   if (perms.length === 0) return false;
 
-  for (const p of perms) {
-    // 客户匹配：空=全部客户
-    if (p.customer_name && p.customer_name !== customerName) continue;
-    // 日期匹配
-    if (date) {
-      const d = new Date(date);
-      if (p.date_start && d < new Date(p.date_start)) continue;
-      if (p.date_end && d > new Date(p.date_end)) continue;
-    }
-    return true;
+  // 一个子账号只有一套配置，取第一条
+  const p = perms[0];
+  // 客户匹配：customers数组为空=全部客户
+  const customers = Array.isArray(p.customers) ? p.customers : (p.customer_name ? [p.customer_name] : []);
+  if (customers.length > 0 && !customers.includes(customerName)) return false;
+  // 日期匹配
+  if (date) {
+    const d = new Date(date);
+    if (p.date_start && d < new Date(p.date_start)) return false;
+    if (p.date_end && d > new Date(p.date_end)) return false;
   }
-  return false;
+  return true;
 }
 
 // 获取用户可访问的客户列表和日期范围
@@ -260,32 +270,31 @@ async function getUserAccessScope(userId) {
     return { customers: null, dateStart: null, dateEnd: null, canImport: true, canExport: true, allowedColumns: null };
   }
   const perms = await getUserPermissions(userId);
-  const customers = new Set();
-  let dateStart = null, dateEnd = null;
-  let canImport = false, canExport = false;
-  const allColumns = new Set();
-  let hasAllCustomer = false;
-
-  for (const p of perms) {
-    if (p.customer_name) customers.add(p.customer_name);
-    else hasAllCustomer = true;
-    if (p.date_start && (!dateStart || new Date(p.date_start) < new Date(dateStart))) dateStart = p.date_start;
-    if (p.date_end && (!dateEnd || new Date(p.date_end) > new Date(dateEnd))) dateEnd = p.date_end;
-    if (p.can_import) canImport = true;
-    if (p.can_export) canExport = true;
-    if (p.allowed_columns && Array.isArray(p.allowed_columns) && p.allowed_columns.length > 0) {
-      p.allowed_columns.forEach(c => allColumns.add(c));
-    } else {
-      // 空数组或null表示全部列
-      allColumns.clear();
-      allColumns.add('__ALL__');
-    }
+  if (perms.length === 0) {
+    return { customers: [], dateStart: null, dateEnd: null, canImport: false, canExport: false, allowedColumns: null };
   }
-
+  // 一个子账号只有一套配置，取第一条
+  const p = perms[0];
+  // 客户列表：优先从 customers 数组读取；兼容旧数据从 customer_name 读取
+  let customers = null;
+  if (Array.isArray(p.customers) && p.customers.length > 0) {
+    customers = p.customers;
+  } else if (p.customer_name) {
+    customers = [p.customer_name];
+  }
+  const hasAllCustomer = customers === null;
+  // 列权限：空数组或null表示全部列
+  let allowedColumns = null;
+  if (Array.isArray(p.allowed_columns) && p.allowed_columns.length > 0) {
+    allowedColumns = p.allowed_columns;
+  }
   return {
-    customers: hasAllCustomer ? null : [...customers],
-    dateStart, dateEnd, canImport, canExport,
-    allowedColumns: allColumns.has('__ALL__') ? null : [...allColumns]
+    customers: hasAllCustomer ? null : customers,
+    dateStart: p.date_start || null,
+    dateEnd: p.date_end || null,
+    canImport: p.can_import ? true : false,
+    canExport: p.can_export ? true : false,
+    allowedColumns
   };
 }
 

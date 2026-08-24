@@ -6,6 +6,36 @@ const multer = require('multer');
 const ExcelJS = require('exceljs');
 require('dotenv').config();
 
+// ========== 水印图片生成（可选依赖 canvas，未安装则跳过背景图水印） ==========
+let canvasLib = null;
+try { canvasLib = require('canvas'); } catch(e) { canvasLib = null; }
+
+const EXCEL_PROTECT_PASSWORD = process.env.EXCEL_PROTECT_PASSWORD || 'Curverobot@2026';
+
+function generateWatermarkImage(text) {
+  if (!canvasLib) return null;
+  try {
+    const { createCanvas } = canvasLib;
+    const w = 500, h = 250;
+    const cv = createCanvas(w, h);
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-30 * Math.PI / 180);
+    ctx.font = 'bold 32px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = 'rgba(128, 128, 128, 0.12)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+    return cv.toBuffer('image/png');
+  } catch(e) {
+    console.warn('生成水印图片失败:', e.message);
+    return null;
+  }
+}
+
 // ========== 全局进程错误防护（防止未捕获异常导致进程崩溃、连接被关闭） ==========
 process.on('uncaughtException', (err) => {
   console.error('⚠️ 未捕获异常:', err.message, err.stack);
@@ -512,6 +542,61 @@ app.get('/api/export/:customer', authRequired, async (req, res) => {
         end_time: r.end_time ? new Date(r.end_time).toLocaleString('zh-CN') : ''
       });
     });
+
+    // ========== Excel 安全加固：工作表保护 + 页眉水印 + 背景图水印 ==========
+    const exportTime = new Date().toLocaleString('zh-CN', { hour12: false });
+    const watermarkText = `机密 · 云曲线 · ${req.username} · ${exportTime}`;
+
+    // 1. 工作表保护：禁止编辑单元格、禁止修改/删除对象（水印），允许浏览和打印
+    ws.protection = {
+      sheet: true,
+      password: EXCEL_PROTECT_PASSWORD,
+      objects: true,
+      scenarios: true,
+      formatCells: false,
+      formatColumns: false,
+      formatRows: false,
+      insertColumns: false,
+      insertRows: false,
+      insertHyperlinks: false,
+      deleteColumns: false,
+      deleteRows: false,
+      sort: false,
+      autoFilter: false,
+      pivotTables: false,
+      selectLockedCells: false,
+      selectUnlockedCells: false
+    };
+
+    // 2. 页眉水印（打印和打印预览时可见，居中灰色小字）
+    const headerStr = `&C&"宋体,Regular"&9&K808080${watermarkText}`;
+    ws.headerFooter = {
+      oddHeader: headerStr,
+      evenHeader: headerStr,
+      firstHeader: headerStr,
+      differentFirst: false,
+      differentOddEven: false
+    };
+
+    // 3. 工作表背景图水印（页面布局视图中可见，平铺半透明文字）
+    const wmBuffer = generateWatermarkImage('CURVEROBOT 机密');
+    if (wmBuffer) {
+      try {
+        const imageId = workbook.addImage({ buffer: wmBuffer, extension: 'png' });
+        ws.background = imageId;
+      } catch(e) {
+        console.warn('设置背景图水印失败:', e.message);
+      }
+    }
+
+    // 4. 工作簿结构保护：禁止添加/删除/重命名工作表
+    try {
+      workbook.security = {
+        workbookStructure: true,
+        windows: true,
+        password: EXCEL_PROTECT_PASSWORD
+      };
+    } catch(e) { /* 兼容旧版ExcelJS */ }
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(customerName)}_${Date.now()}.xlsx`);
     await workbook.xlsx.write(res);

@@ -65,6 +65,12 @@ tr:hover td{background:#f9fbff}
 .checkbox-item{display:flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid #e0e0e0;border-radius:5px;cursor:pointer;font-size:12px}
 .checkbox-item:hover{border-color:#1a73e8;background:#f9fbff}
 .checkbox-item input{cursor:pointer}
+.perm-customer-box{max-height:180px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:8px;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start}
+.perm-customer-item{display:flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid #e0e0e0;border-radius:4px;cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap}
+.perm-customer-item:hover{border-color:#1a73e8;background:#f0f7ff}
+.perm-customer-item.checked{background:#e8f4ff;border-color:#1a73e8;color:#1a73e8}
+.perm-customer-item input{cursor:pointer;width:13px;height:13px}
+.perm-customer-empty{color:#999;font-size:12px;padding:10px;text-align:center;width:100%}
 .upload-area{border:2px dashed #ccc;border-radius:10px;padding:40px;text-align:center;cursor:pointer;transition:all .2s}
 .upload-area:hover,.upload-area.dragover{border-color:#1a73e8;background:#f0f7ff}
 .upload-area .icon{font-size:48px;margin-bottom:12px}
@@ -173,23 +179,46 @@ tr:hover td{background:#f9fbff}
   </div>
 </div>
 
-<!-- 权限管理弹窗 -->
+<!-- 权限管理弹窗（一套配置：多选客户 + 日期范围 + 列权限 + 导入/导出总开关） -->
 <div class="modal-overlay" id="permModal">
-  <div class="modal" style="max-width:640px">
+  <div class="modal" style="max-width:680px">
     <div class="modal-header">
       <h3 id="permModalTitle">权限管理</h3>
       <button class="modal-close" onclick="closePermModal()">&times;</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="permUserId">
-      <div style="margin-bottom:14px">
-        <button class="btn btn-blue btn-sm" onclick="addPermRow()">+ 添加权限规则</button>
-        <span style="font-size:12px;color:#999;margin-left:8px">多条规则取并集；客户留空=全部客户，列留空=全部列</span>
+      <input type="hidden" id="permDbId">
+      <div class="form-group">
+        <label>可查看客户（多选，不选=全部客户）</label>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <input type="text" id="permCustomerSearch" placeholder="输入关键词搜索客户..." oninput="renderPermCustomerList()" style="flex:1">
+          <button class="btn btn-outline btn-sm" onclick="selectAllPermCustomers()" type="button">全选</button>
+          <button class="btn btn-outline btn-sm" onclick="clearPermCustomers()" type="button">清除</button>
+        </div>
+        <div id="permCustomerList" class="perm-customer-box"></div>
+        <div style="font-size:12px;color:#999;margin-top:5px">已选 <strong id="permSelectedCount" style="color:#1a73e8">0</strong> 个客户</div>
       </div>
-      <div id="permList"></div>
+      <div class="form-group">
+        <label>可查看日期范围（留空=不限）</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="date" id="permDateStart" style="flex:1">
+          <span style="color:#999">~</span>
+          <input type="date" id="permDateEnd" style="flex:1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>可查看数据列（不选=全部列）</label>
+        <div class="checkbox-group" id="permCols"></div>
+      </div>
+      <div style="display:flex;gap:20px;margin-top:8px;padding-top:14px;border-top:1px solid #eee">
+        <label class="checkbox-item"><input type="checkbox" id="permCanImport"> 允许导入Excel</label>
+        <label class="checkbox-item"><input type="checkbox" id="permCanExport"> 允许导出数据</label>
+      </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closePermModal()">关闭</button>
+      <button class="btn btn-outline" onclick="closePermModal()">取消</button>
+      <button class="btn btn-blue" onclick="savePermission()">保存权限</button>
     </div>
   </div>
 </div>
@@ -338,112 +367,89 @@ async function deleteUser(id,username){
   }catch(e){showToast('删除失败','error');}
 }
 
-// 权限管理
-let permRows=[];
+// 权限管理（一套配置：多选客户 + 日期范围 + 列权限 + 导入/导出总开关）
+let permSelectedCustomers = new Set();
 function openPermModal(userId,username){
   document.getElementById('permUserId').value=userId;
+  document.getElementById('permDbId').value='';
   document.getElementById('permModalTitle').textContent=`权限管理 - ${username}`;
-  permRows=[];
-  document.getElementById('permList').innerHTML='';
-  // 加载现有权限
+  permSelectedCustomers = new Set();
+  document.getElementById('permCustomerSearch').value='';
+  document.getElementById('permDateStart').value='';
+  document.getElementById('permDateEnd').value='';
+  document.getElementById('permCanImport').checked=false;
+  document.getElementById('permCanExport').checked=false;
+  renderPermCols();
   api('/api/users/'+userId+'/permissions').then(r=>r.json()).then(perms=>{
-    perms.forEach(p=>addPermRow(p));
+    if(perms && perms.length>0){
+      const p=perms[0];
+      document.getElementById('permDbId').value=p.id||'';
+      if(Array.isArray(p.customers) && p.customers.length>0){
+        permSelectedCustomers = new Set(p.customers);
+      }else if(p.customer_name){
+        permSelectedCustomers = new Set([p.customer_name]);
+      }
+      document.getElementById('permDateStart').value = p.date_start ? p.date_start.slice(0,10) : '';
+      document.getElementById('permDateEnd').value = p.date_end ? p.date_end.slice(0,10) : '';
+      document.getElementById('permCanImport').checked = p.can_import ? true : false;
+      document.getElementById('permCanExport').checked = p.can_export ? true : false;
+      const cols = Array.isArray(p.allowed_columns) ? p.allowed_columns : [];
+      document.querySelectorAll('#permCols input[type=checkbox]').forEach(cb=>{ cb.checked = cols.includes(cb.value); });
+    }
+    renderPermCustomerList();
+    updatePermSelectedCount();
   });
   document.getElementById('permModal').classList.add('show');
 }
 function closePermModal(){document.getElementById('permModal').classList.remove('show');}
-
-function addPermRow(existing={}){
-  const rowId=Date.now()+Math.random();
-  permRows.push({id:rowId,dbId:existing.id||null,...existing});
-  renderPermRows();
+function renderPermCols(){
+  document.getElementById('permCols').innerHTML=ALL_COLUMNS.map(c=>`<label class="checkbox-item"><input type="checkbox" value="${c.key}">${c.label}</label>`).join('');
 }
-
-function renderPermRows(){
-  const container=document.getElementById('permList');
-  container.innerHTML=permRows.map((p,idx)=>{
-    const customerOptions=['<option value="">全部客户</option>',...customerList.map(c=>`<option value="${c}" ${p.customer_name===c?'selected':''}>${c}</option>`)].join('');
-    const colOptions=ALL_COLUMNS.map(c=>{
-      const checked=(p.allowed_columns&&p.allowed_columns.includes(c.key))?'checked':'';
-      return `<label class="checkbox-item"><input type="checkbox" value="${c.key}" ${checked} onchange="updatePermCols(${idx})">${c.label}</label>`;
-    }).join('');
-    return `<div style="border:1px solid #e8e8e8;border-radius:8px;padding:14px;margin-bottom:12px;position:relative">
-      <div style="position:absolute;top:8px;right:10px"><button class="btn btn-danger btn-sm" onclick="removePermRow(${idx})">删除</button></div>
-      <div style="font-weight:600;margin-bottom:10px;color:#1a73e8">规则 ${idx+1}</div>
-      <div class="form-row">
-        <div class="form-group"><label>可查看客户</label><select id="perm_cust_${idx}">${customerOptions}</select></div>
-        <div class="form-group"><label>日期范围</label>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input type="date" id="perm_ds_${idx}" value="${p.date_start?p.date_start.slice(0,10):''}" style="flex:1">
-            <span style="color:#999">~</span>
-            <input type="date" id="perm_de_${idx}" value="${p.date_end?p.date_end.slice(0,10):''}" style="flex:1">
-          </div>
-        </div>
-      </div>
-      <div class="form-group"><label>可查看数据列（留空=全部）</label><div class="checkbox-group" id="perm_cols_${idx}">${colOptions}</div></div>
-      <div style="display:flex;gap:16px;margin-top:8px">
-        <label class="checkbox-item"><input type="checkbox" id="perm_import_${idx}" ${p.can_import?'checked':''}> 允许导入Excel</label>
-        <label class="checkbox-item"><input type="checkbox" id="perm_export_${idx}" ${p.can_export?'checked':''}> 允许导出数据</label>
-      </div>
-    </div>`;
+function renderPermCustomerList(){
+  const container=document.getElementById('permCustomerList');
+  const kw=document.getElementById('permCustomerSearch').value.trim().toLowerCase();
+  const filtered = customerList.filter(c=>!kw || c.toLowerCase().includes(kw));
+  if(filtered.length===0){ container.innerHTML='<div class="perm-customer-empty">无匹配客户</div>'; return; }
+  container.innerHTML=filtered.map(c=>{
+    const checked=permSelectedCustomers.has(c);
+    return `<label class="perm-customer-item ${checked?'checked':''}"><input type="checkbox" value="${escapeHtml(c)}" ${checked?'checked':''} onchange="togglePermCustomer('${escapeHtml(c)}')"><span>${escapeHtml(c)}</span></label>`;
   }).join('');
 }
-
-function updatePermCols(idx){
-  const container=document.getElementById('perm_cols_'+idx);
-  const checked=[...container.querySelectorAll('input:checked')].map(i=>i.value);
-  permRows[idx].allowed_columns=checked;
+function togglePermCustomer(name){
+  if(permSelectedCustomers.has(name)) permSelectedCustomers.delete(name);
+  else permSelectedCustomers.add(name);
+  updatePermSelectedCount();
 }
-
-function removePermRow(idx){
-  const row=permRows[idx];
-  if(row.dbId){
-    if(!confirm('确认删除这条权限规则？'))return;
-    api('/api/permissions/'+row.dbId,{method:'DELETE'}).then(()=>{showToast('已删除','success');});
-  }
-  permRows.splice(idx,1);
-  renderPermRows();
+function selectAllPermCustomers(){
+  const kw=document.getElementById('permCustomerSearch').value.trim().toLowerCase();
+  customerList.filter(c=>!kw || c.toLowerCase().includes(kw)).forEach(c=>permSelectedCustomers.add(c));
+  renderPermCustomerList(); updatePermSelectedCount();
 }
-
-// 保存权限（自动保存每条）
-document.addEventListener('change',async function(e){
-  if(e.target.closest('#permList')&&e.target.tagName==='SELECT'){
-    const idx=e.target.id.match(/perm_cust_(\d+)/)?.[1];
-    if(idx!==undefined)savePermRow(parseInt(idx));
-  }
-  if(e.target.closest('#permList')&&e.target.type==='date'){
-    const m=e.target.id.match(/perm_d[se]_(\d+)/);
-    if(m)savePermRow(parseInt(m[1]));
-  }
-  if(e.target.closest('#permList')&&e.target.type==='checkbox'&&(e.target.id.startsWith('perm_import_')||e.target.id.startsWith('perm_export_'))){
-    const m=e.target.id.match(/perm_(import|export)_(\d+)/);
-    if(m)savePermRow(parseInt(m[2]));
-  }
-});
-
-async function savePermRow(idx){
-  const row=permRows[idx];
-  const customer_name=document.getElementById('perm_cust_'+idx).value;
-  const date_start=document.getElementById('perm_ds_'+idx).value||null;
-  const date_end=document.getElementById('perm_de_'+idx).value||null;
-  const can_import=document.getElementById('perm_import_'+idx).checked;
-  const can_export=document.getElementById('perm_export_'+idx).checked;
-  const colContainer=document.getElementById('perm_cols_'+idx);
-  const allowed_columns=[...colContainer.querySelectorAll('input:checked')].map(i=>i.value);
+function clearPermCustomers(){ permSelectedCustomers.clear(); renderPermCustomerList(); updatePermSelectedCount(); }
+function updatePermSelectedCount(){ document.getElementById('permSelectedCount').textContent=permSelectedCustomers.size; }
+function escapeHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+async function savePermission(){
   const userId=document.getElementById('permUserId').value;
-  const body={customer_name:customer_name||null,date_start,date_end,allowed_columns,can_import,can_export};
+  const dbId=document.getElementById('permDbId').value;
+  const customers=[...permSelectedCustomers];
+  const date_start=document.getElementById('permDateStart').value||null;
+  const date_end=document.getElementById('permDateEnd').value||null;
+  const can_import=document.getElementById('permCanImport').checked;
+  const can_export=document.getElementById('permCanExport').checked;
+  const allowed_columns=[...document.querySelectorAll('#permCols input:checked')].map(i=>i.value);
+  const body={customers,date_start,date_end,allowed_columns,can_import,can_export};
   try{
     let res;
-    if(row.dbId){
-      res=await api('/api/permissions/'+row.dbId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(dbId){
+      res=await api('/api/permissions/'+dbId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     }else{
       res=await api('/api/users/'+userId+'/permissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      if(res.ok){const d=await res.json();row.dbId=d.id;}
+      if(res.ok){const d=await res.json();document.getElementById('permDbId').value=d.id;}
     }
-    if(res.ok)showToast('权限已保存','success');
+    if(!res.ok){const d=await res.json();showToast(d.error||'保存失败','error');return;}
+    showToast('权限已保存','success'); loadUsers();
   }catch(e){showToast('保存失败','error');}
 }
-
 // 文件上传
 const uploadArea=document.getElementById('uploadArea');
 uploadArea.addEventListener('dragover',e=>{e.preventDefault();uploadArea.classList.add('dragover');});
