@@ -44,7 +44,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .dropdown-item:last-child{border-bottom:none}
 .dropdown-item:hover{background:#e8f4ff;color:#1a73e8}
 .layout{display:flex;min-height:calc(100vh - 52px)}
-.sidebar{width:240px;background:#fff;border-right:1px solid #e8e8e8;padding:10px;overflow-y:auto;flex-shrink:0}
+.sidebar{width:240px;background:#fff;border-right:1px solid #e8e8e8;padding:10px;overflow-y:auto;flex-shrink:0;position:sticky;top:52px;align-self:flex-start;max-height:calc(100vh - 52px)}
 .main{flex:1;padding:12px;overflow-x:auto;min-width:0}
 .customer-list h3{font-size:12px;color:#888;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #eee;text-transform:uppercase;letter-spacing:.5px}
 .customer-item{padding:7px 10px;border-radius:5px;cursor:pointer;font-size:13px;margin-bottom:2px;transition:all .15s;display:flex;justify-content:space-between;align-items:center}
@@ -145,6 +145,8 @@ tr.detail-row:hover td{background:#f0f7ff}
     <span class="user-tag" id="userTag"></span>
     <button class="btn btn-secondary btn-sm" onclick="toggleFilterPanel()" id="filterToggleBtn">🔍 筛选</button>
     <button class="btn btn-secondary btn-sm" onclick="openColSetting()">⚙ 列设置</button>
+    <button class="btn btn-secondary btn-sm" id="adminBackBtn" style="display:none" onclick="location.href='/admin'">⚙ 管理后台</button>
+    <button class="btn btn-secondary btn-sm" onclick="exportExcel()" id="exportExcelBtn">📥 导出Excel</button>
     <button class="btn btn-secondary btn-sm" onclick="openExportModal()" id="exportBtn">导出PDF</button>
     <button class="btn btn-secondary btn-sm" onclick="logout()">退出</button>
   </div>
@@ -174,7 +176,8 @@ tr.detail-row:hover td{background:#f0f7ff}
         <p>加载数据中...</p>
       </div>
       <div id="homeData" class="hidden">
-        <div class="stats-row" id="homeStats"></div>
+        <div id="homeDateRange" style="background:#fff;border-radius:8px;padding:8px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);font-size:13px;color:#555"><span style="color:#1a73e8;font-weight:600">📅 数据范围：</span><span id="homeDateRangeText">加载中...</span></div>
+      <div class="stats-row" id="homeStats"></div>
         <div class="chart-card" id="chart1Card">
           <h3>全部客户：炉数 - 板件数量</h3>
           <div class="chart-container" id="chart1"></div>
@@ -214,6 +217,7 @@ tr.detail-row:hover td{background:#f0f7ff}
       </div>
     </div>
     <div class="main">
+      <div id="detailDateRange" style="background:#fff;border-radius:8px;padding:8px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);font-size:13px;color:#555"><span style="color:#1a73e8;font-weight:600">📅 数据范围：</span><span id="detailDateRangeText">加载中...</span></div>
       <div class="stats-row" id="detailStats"></div>
       <div class="chart-card" id="detailChartCard">
         <h3 id="detailChartTitle">炉次 - 板件数量</h3>
@@ -348,10 +352,28 @@ let displayConfig=loadColConfig();
 let tempColConfig={};
 
 function loadColConfig(){
+  // 优先从服务端加载（关联账号），失败则用默认
   try{const s=localStorage.getItem(COL_CONFIG_KEY);if(s)return{...DEFAULT_COL_CONFIG,...JSON.parse(s)};}catch(e){}
   return{...DEFAULT_COL_CONFIG};
 }
-function saveColConfig(){try{localStorage.setItem(COL_CONFIG_KEY,JSON.stringify(displayConfig));}catch(e){}}
+async function loadColConfigFromServer(){
+  try{
+    const res=await Auth.fetchAuth('/api/col-config');
+    if(res.ok){
+      const config=await res.json();
+      if(config && Object.keys(config).length>0){
+        displayConfig={...DEFAULT_COL_CONFIG,...config};
+        saveColConfig();
+      }
+    }
+  }catch(e){console.warn('从服务端加载列配置失败，使用本地默认:',e);}
+}
+async function saveColConfigToServer(){
+  try{
+    await Auth.fetchAuth('/api/col-config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(displayConfig)});
+  }catch(e){console.warn('保存列配置到服务端失败:',e);}
+}
+function saveColConfig(){try{localStorage.setItem(COL_CONFIG_KEY,JSON.stringify(displayConfig));}catch(e){} saveColConfigToServer();}
 function getActiveCols(filterFn){return COLUMN_DEFS.filter(c=>displayConfig[c.key]&&(!filterFn||filterFn(c)));}
 
 // 认证
@@ -382,9 +404,18 @@ async function init(){
     if(!meRes.ok){logout();return;}
     const me=await meRes.json();
     userInfo=me.user;userScope=me.scope;
-    document.getElementById('userTag').textContent='👤 '+userInfo.username+(userInfo.role==='admin'?'(管理员)':'');
+    document.getElementById('userTag').textContent='👤 '+userInfo.username+'（30分钟无操作自动登出）';
+    // 管理员显示返回后台按钮
+    if(userInfo.role==='admin'){
+      document.getElementById('adminBackBtn').style.display='inline-flex';
+    }
     // 导出按钮权限
-    if(!userScope.canExport&&userInfo.role!=='admin')document.getElementById('exportBtn').style.display='none';
+    if(!userScope.canExport&&userInfo.role!=='admin'){
+      document.getElementById('exportBtn').style.display='none';
+      document.getElementById('exportExcelBtn').style.display='none';
+    }
+    // 从服务端加载列配置（关联账号）
+    await loadColConfigFromServer();
 
     showLoading('加载数据中...');
     const [ovRes,partsRes]=await Promise.all([api('/api/overview'),api('/api/parts-stats')]);
@@ -504,6 +535,8 @@ function renderHome(){
   const data=getFilteredOverview();
   const names=data.map(d=>d.customer_name);
   renderCustomerList('homeCustomerList',names,null);
+  // 计算并显示日期区间
+  updateDateRange(data, 'homeDateRangeText');
 
   if(data.length===0){
     document.getElementById('homeData').classList.add('hidden');
@@ -672,12 +705,16 @@ function showHome(){
   document.getElementById('customerNameFixed').classList.add('hidden');
   document.getElementById('topbarTitle').textContent='云曲线智能喷涂数据看板';
   renderHome();
+  // 延迟resize，确保DOM渲染完成后ECharts正确重绘
+  setTimeout(resizeAllCharts, 100);
 }
 
 function renderDetail(){
   if(!currentCustomer)return;
   // 日期筛选
   let filtered=dailyData;
+  // 计算并显示日期区间
+  updateDateRange(filtered, 'detailDateRangeText', true);
   if(filterValues.dateStart||filterValues.dateEnd){
     filtered=dailyData.filter(d=>{
       if(filterValues.dateStart&&formatDate(d.record_date)<filterValues.dateStart)return false;
@@ -723,14 +760,11 @@ function renderDetail(){
 function renderDetailTable(daily){
   const aggCols=getActiveCols(c=>c.scope==='both'&&c.group==='作业统计');
   // 排序
-  let sorted=[...daily];
+  let sorted;
   if(detailSort.key){
-    sorted.sort((a,b)=>{
-      const va=num(a[detailSort.key]),vb=num(b[detailSort.key]);
-      return detailSort.direction==='asc'?va-vb:vb-va;
-    });
+    sorted=sortDailyData(daily, detailSort.key, detailSort.direction);
   }else{
-    sorted.sort((a,b)=>new Date(b.record_date)-new Date(a.record_date));
+    sorted=[...daily].sort((a,b)=>new Date(b.record_date)-new Date(a.record_date));
   }
 
   const thead=document.getElementById('detailHead');
@@ -774,6 +808,20 @@ function sortDetail(key){
   if(detailSort.key===key)detailSort.direction=detailSort.direction==='asc'?'desc':'asc';
   else{detailSort.key=key;detailSort.direction='desc';}
   renderDetail();
+}
+function sortDailyData(data, key, direction){
+  const sorted=[...data];
+  sorted.sort((a,b)=>{
+    let va,vb;
+    if(key==='record_date'){
+      va=new Date(a.record_date).getTime();
+      vb=new Date(b.record_date).getTime();
+    }else{
+      va=num(a[key]);vb=num(b[key]);
+    }
+    return direction==='asc'?va-vb:vb-va;
+  });
+  return sorted;
 }
 
 function toggleDateExpand(dateStr){
@@ -880,6 +928,49 @@ async function doExport(){
 }
 
 // ========== 工具 ==========
+function updateDateRange(data, elementId, isDaily){
+  const el=document.getElementById(elementId);
+  if(!el)return;
+  if(!data || data.length===0){el.textContent='暂无数据';return;}
+  let minDate,maxDate;
+  if(isDaily){
+    // daily数据，record_date是日期字符串
+    const dates=data.map(d=>new Date(d.record_date).getTime()).filter(t=>!isNaN(t));
+    if(dates.length===0){el.textContent='暂无数据';return;}
+    minDate=new Date(Math.min(...dates));
+    maxDate=new Date(Math.max(...dates));
+  }else{
+    // overview数据，需要从first_time/last_time计算
+    const starts=data.map(d=>new Date(d.first_time).getTime()).filter(t=>!isNaN(t));
+    const ends=data.map(d=>new Date(d.last_time).getTime()).filter(t=>!isNaN(t));
+    if(starts.length===0 && ends.length===0){el.textContent='暂无数据';return;}
+    minDate=new Date(Math.min(...starts));
+    maxDate=new Date(Math.max(...ends));
+  }
+  el.textContent=formatDate(minDate)+' ~ '+formatDate(maxDate)+'（共 '+data.length+' 个客户/天）';
+}
+function exportExcel(){
+  if(!currentCustomer){showToast('请先选择一个客户','error');return;}
+  // 根据列设置确定要导出的可选列
+  const optionalKeys=['duration_min','clear_paint_g','color_paint_g','pearl_paint_g','primer_paint_g'];
+  const selected=optionalKeys.filter(k=>displayConfig[k]);
+  const colsParam=selected.join(',');
+  const url='/api/export/'+encodeURIComponent(currentCustomer)+(colsParam?'?columns='+colsParam:'');
+  // 用带token的方式下载
+  Auth.fetchAuth(url).then(res=>{
+    if(!res.ok)throw new Error('导出失败');
+    return res.blob();
+  }).then(blob=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=currentCustomer+'_'+new Date().toISOString().slice(0,10)+'.xlsx';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('导出成功','success');
+  }).catch(e=>{
+    showToast('导出失败：'+e.message,'error');
+  });
+}
 function resizeAllCharts(){
   [chart1Inst,chart2Inst,chart3Inst,chartPartsInst,detailChartInst,detailPartsInst].forEach(c=>{if(c)c.resize();});
 }

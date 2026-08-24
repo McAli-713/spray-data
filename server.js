@@ -17,6 +17,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const {
   initDB, getUserByUsername, getUserById, verifyPassword, listUsers,
   createUser, updateUser, deleteUser,
+  getUserColConfig, saveUserColConfig,
   getUserPermissions, addPermission, updatePermission, deletePermission,
   getUserAccessScope,
   upsertRecords, upsertCustomerStats, listCustomers, getCustomerOverview,
@@ -475,7 +476,8 @@ app.get('/api/export/:customer', authRequired, async (req, res) => {
     const records = await getCustomerRecords(customerName, scope);
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet(customerName.substring(0, 30));
-    ws.columns = [
+    // 基本数据列（默认导出）
+    const baseCols = [
       { header: '时间', key: 'record_date', width: 12 },
       { header: '设备', key: 'device', width: 18 },
       { header: '品牌', key: 'brand', width: 12 },
@@ -484,13 +486,22 @@ app.get('/api/export/:customer', authRequired, async (req, res) => {
       { header: '部件', key: 'parts', width: 30 },
       { header: '板件数量', key: 'board_count', width: 10 },
       { header: '起始时间', key: 'start_time', width: 20 },
-      { header: '结束时间', key: 'end_time', width: 20 },
-      { header: '时长(min)', key: 'duration_min', width: 12 },
-      { header: '清漆用量(g)', key: 'clear_paint_g', width: 12 },
-      { header: '色漆用量(g)', key: 'color_paint_g', width: 12 },
-      { header: '珍珠用量(g)', key: 'pearl_paint_g', width: 12 },
-      { header: '底漆用量()', key: 'primer_paint_g', width: 12 }
+      { header: '结束时间', key: 'end_time', width: 20 }
     ];
+    // 可选数据列（按列设置导出）
+    const optionalCols = {
+      duration_min: { header: '时长(min)', key: 'duration_min', width: 12 },
+      clear_paint_g: { header: '清漆用量(g)', key: 'clear_paint_g', width: 12 },
+      color_paint_g: { header: '色漆用量(g)', key: 'color_paint_g', width: 12 },
+      pearl_paint_g: { header: '珍珠用量(g)', key: 'pearl_paint_g', width: 12 },
+      primer_paint_g: { header: '底漆用量()', key: 'primer_paint_g', width: 12 }
+    };
+    const exportColsParam = req.query.columns;
+    let selectedOptional = Object.keys(optionalCols);
+    if (exportColsParam) {
+      selectedOptional = exportColsParam.split(',').filter(k => optionalCols[k]);
+    }
+    ws.columns = [...baseCols, ...selectedOptional.map(k => optionalCols[k])];
     ws.getRow(1).font = { bold: true };
     ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
     records.forEach(r => {
@@ -507,6 +518,25 @@ app.get('/api/export/:customer', authRequired, async (req, res) => {
     res.end();
   } catch (err) {
     serverError(res, err, '导出失败');
+  }
+});
+
+// ========== 用户列配置（关联账号） ==========
+app.get('/api/col-config', authRequired, async (req, res) => {
+  try {
+    const config = await getUserColConfig(req.userId);
+    res.json(config || {});
+  } catch (err) {
+    serverError(res, err, '获取列配置失败');
+  }
+});
+app.put('/api/col-config', authRequired, async (req, res) => {
+  try {
+    const config = req.body || {};
+    await saveUserColConfig(req.userId, config);
+    res.json({ success: true });
+  } catch (err) {
+    serverError(res, err, '保存列配置失败');
   }
 });
 

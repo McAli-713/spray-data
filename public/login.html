@@ -79,11 +79,15 @@ async function doLogin(e){
 (function(){
   if(Auth.getToken() && !Auth.isExpired()){
     Auth.fetchAuth('/api/me')
-      .then(r=>r.json())
+      .then(r=>{
+        if(!r.ok) throw new Error('auth failed');
+        return r.json();
+      })
       .then(d=>{location.href=d.user.role==='admin'?'/admin':'/dashboard';})
-      .catch(()=>{Auth.clearAuth();});
-  }else{
-    Auth.clearAuth();
+      .catch(()=>{
+        // 请求失败（冷启动/网络波动）时保留token，不强制登出
+        // 用户可手动点击登录按钮
+      });
   }
 })();
 </script>

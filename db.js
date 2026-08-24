@@ -26,6 +26,10 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // 兼容旧表：增加列配置字段
+    try {
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS col_config JSONB DEFAULT \'{}\'');
+    } catch (e) { /* 已存在则忽略 */ }
 
     // 子账号权限表（一个子账号可有多条权限，对应不同客户/日期范围）
     await client.query(`
@@ -496,11 +500,27 @@ async function getTotalRecords() {
   return parseInt(result.rows[0].count);
 }
 
+// ========== 用户列配置（关联账号，登录后拉取） ==========
+async function getUserColConfig(userId) {
+  const result = await pool.query('SELECT col_config FROM users WHERE id = $1', [userId]);
+  if (result.rows.length === 0) return {};
+  return result.rows[0].col_config || {};
+}
+
+async function saveUserColConfig(userId, config) {
+  const result = await pool.query(
+    'UPDATE users SET col_config = $1 WHERE id = $2 RETURNING id',
+    [JSON.stringify(config || {}), userId]
+  );
+  return result.rowCount > 0;
+}
+
 module.exports = {
   pool, initDB,
   // 用户
   getUserByUsername, getUserById, verifyPassword, listUsers,
   createUser, updateUser, deleteUser,
+  getUserColConfig, saveUserColConfig,
   // 权限
   getUserPermissions, addPermission, updatePermission, deletePermission,
   checkUserAccess, getUserAccessScope,
