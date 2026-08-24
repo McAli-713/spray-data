@@ -532,8 +532,23 @@ app.get('/api/export/:customer', authRequired, async (req, res) => {
       selectedOptional = exportColsParam.split(',').filter(k => optionalCols[k]);
     }
     ws.columns = [...baseCols, ...selectedOptional.map(k => optionalCols[k])];
-    ws.getRow(1).font = { bold: true };
-    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+    const totalCols = ws.columns.length;
+    // ========== 抬头标题行（第1行）：机密・云曲线・{导出人用户名}・{导出时间} ==========
+    const exportTime = new Date().toLocaleString('zh-CN', { hour12: false });
+    const titleText = `机密・云曲线・${req.username}・${exportTime}`;
+    const titleRow = ws.getRow(1);
+    titleRow.getCell(1).value = titleText;
+    titleRow.getCell(1).font = { bold: true, size: 12, color: { argb: 'FFC00000' } };
+    titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    titleRow.height = 24;
+    // 合并标题行所有列
+    ws.mergeCells(1, 1, 1, totalCols);
+    // 表头行（第2行）
+    const headerRow = ws.getRow(2);
+    headerRow.font = { bold: true };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+    headerRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    // 数据从第3行开始
     records.forEach(r => {
       ws.addRow({
         ...r,
@@ -544,10 +559,9 @@ app.get('/api/export/:customer', authRequired, async (req, res) => {
     });
 
     // ========== Excel 安全加固：工作表保护 + 页眉水印 + 背景图水印 ==========
-    const exportTime = new Date().toLocaleString('zh-CN', { hour12: false });
-    const watermarkText = `机密 · 云曲线 · ${req.username} · ${exportTime}`;
+    const watermarkText = titleText;
 
-    // 1. 工作表保护：禁止编辑单元格、禁止修改/删除对象（水印），允许浏览和打印
+    // 1. 工作表保护：禁止编辑单元格、禁止修改/删除对象（水印），允许浏览、选择、复制和打印
     ws.protection = {
       sheet: true,
       password: EXCEL_PROTECT_PASSWORD,
@@ -564,9 +578,15 @@ app.get('/api/export/:customer', authRequired, async (req, res) => {
       sort: false,
       autoFilter: false,
       pivotTables: false,
-      selectLockedCells: false,
-      selectUnlockedCells: false
+      selectLockedCells: true,
+      selectUnlockedCells: true
     };
+    // 确保所有单元格默认锁定（标题行、表头、数据行均不可编辑）
+    ws.eachRow({ includeEmpty: false }, row => {
+      row.eachCell({ includeEmpty: false }, cell => {
+        cell.protection = { locked: true };
+      });
+    });
 
     // 2. 页眉水印（打印和打印预览时可见，居中灰色小字）
     const headerStr = `&C&"宋体,Regular"&9&K808080${watermarkText}`;

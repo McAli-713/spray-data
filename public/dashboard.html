@@ -427,9 +427,14 @@ async function init(){
       document.getElementById('homeEmpty').innerHTML='<div class="icon">📭</div><p>暂无数据，请联系管理员上传Excel</p>';
       return;
     }
+    buildFilterPanel();
+    // 只有一个客户时直接显示详表，跳过总表
+    if(overviewData.length===1){
+      showDetail(overviewData[0].customer_name);
+      return;
+    }
     document.getElementById('homeEmpty').classList.add('hidden');
     document.getElementById('homeData').classList.remove('hidden');
-    buildFilterPanel();
     renderHome();
   }catch(e){
     hideLoading();
@@ -519,8 +524,17 @@ function getFilteredOverview(){
 }
 
 function applyFilters(){
-  if(currentCustomer)renderDetail();
-  else renderHome();
+  if(currentCustomer){
+    renderDetail();
+  }else{
+    const filtered=getFilteredOverview();
+    // 筛选后只剩一个客户时直接显示详表，跳过总表
+    if(filtered.length===1){
+      showDetail(filtered[0].customer_name);
+      return;
+    }
+    renderHome();
+  }
 }
 
 function toggleFilterPanel(){
@@ -904,28 +918,116 @@ function clearExport(){exportSelected.clear();renderExportList();}
 async function doExport(){
   if(exportSelected.size===0){showToast('请至少选择一个客户','error');return;}
   closeExportModal();
-  showToast('正在生成PDF...');
-  // 简化版：用浏览器打印
+  showLoading('正在生成PDF，请稍候...');
   const names=[...exportSelected];
+  const exportTime=new Date().toLocaleString('zh-CN',{hour12:false});
+  const exporter=userInfo?userInfo.username:'未知';
+  // 并行获取每个客户的日聚合和明细数据
+  const customerData=[];
+  try{
+    await Promise.all(names.map(async (name)=>{
+      try{
+        const [dailyRes,recordsRes]=await Promise.all([
+          api('/api/daily/'+encodeURIComponent(name)),
+          api('/api/records/'+encodeURIComponent(name))
+        ]);
+        const daily=dailyRes.ok?await dailyRes.json():[];
+        const records=recordsRes.ok?await recordsRes.json():[];
+        const ov=overviewData.find(d=>d.customer_name===name);
+        customerData.push({name,ov,daily,records});
+      }catch(e){
+        customerData.push({name,ov:overviewData.find(d=>d.customer_name===name),daily:[],records:[]});
+      }
+    }));
+    // 按选中顺序排序
+    customerData.sort((a,b)=>names.indexOf(a.name)-names.indexOf(b.name));
+  }catch(e){
+    hideLoading();
+    showToast('数据获取失败：'+e.message,'error');
+    return;
+  }
+  hideLoading();
+  // 生成打印HTML（A4横向，防溢出）
   const printWin=window.open('','_blank');
-  let content=`<html><head><title>喷涂数据导出</title><style>body{font-family:sans-serif;padding:20px}h2{color:#1a73e8;border-bottom:2px solid #1a73e8;padding-bottom:6px;margin-top:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}th{background:#f5f7fa;padding:6px 8px;text-align:left;border-bottom:2px solid #e8e8e8}td{padding:5px 8px;border-bottom:1px solid #f0f0f0}</style></head><body>`;
-  content+='<h1>云曲线智能喷涂数据看板 - 导出报告</h1>';
-  content+='<p>导出时间：'+new Date().toLocaleString('zh-CN')+'</p>';
-  for(const name of names){
-    const ov=overviewData.find(d=>d.customer_name===name);
-    content+=`<h2>${escapeHtml(name)}</h2>`;
-    if(ov){
-      content+=`<p>炉数：${num(ov.furnace)} | 板件数量：${num(ov.board_count)} | 总时长：${formatVal(ov.duration_min,1)} min</p>`;
+  if(!printWin){showToast('请允许弹出窗口以导出PDF','error');return;}
+  let content=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>喷涂数据导出报告</title>
+<style>
+@page{size:A4 landscape;margin:8mm;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:10px;color:#333;padding:0;line-height:1.4;}
+.report-header{text-align:center;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #1a73e8;}
+.report-header h1{font-size:16px;color:#1a73e8;margin-bottom:4px;}
+.report-header .meta{font-size:10px;color:#888;}
+.watermark-header{text-align:center;font-size:11px;color:#c00;font-weight:bold;margin-bottom:8px;letter-spacing:1px;}
+.customer-section{margin-bottom:14px;page-break-inside:avoid;}
+.customer-section:last-child{page-break-after:auto;}
+.customer-title{font-size:13px;color:#1a73e8;font-weight:bold;border-bottom:1px solid #1a73e8;padding-bottom:3px;margin-bottom:6px;}
+.summary-row{display:flex;gap:16px;margin-bottom:6px;font-size:10px;}
+.summary-item{background:#f5f7fa;padding:3px 8px;border-radius:3px;}
+.summary-item .label{color:#888;}
+.summary-item .value{font-weight:bold;color:#1a73e8;}
+table{width:100%;border-collapse:collapse;font-size:9px;margin-bottom:8px;table-layout:fixed;word-wrap:break-word;word-break:break-all;}
+th{background:#f5f7fa;padding:4px 5px;text-align:left;border-bottom:1.5px solid #e8e8e8;font-weight:600;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+td{padding:3px 5px;border-bottom:0.5px solid #f0f0f0;vertical-align:top;word-wrap:break-word;word-break:break-all;overflow:hidden;}
+tr:nth-child(even) td{background:#fafbfc;}
+.table-title{font-size:11px;font-weight:bold;color:#333;margin:6px 0 3px 0;}
+.no-data{text-align:center;color:#999;padding:10px;font-size:10px;}
+.page-break{page-break-before:always;}
+</style></head><body>`;
+  content+=`<div class="watermark-header">机密・云曲线・${escapeHtml(exporter)}・${escapeHtml(exportTime)}</div>`;
+  content+=`<div class="report-header"><h1>云曲线智能喷涂数据看板 - 导出报告</h1><div class="meta">导出人：${escapeHtml(exporter)} | 导出时间：${escapeHtml(exportTime)} | 客户数：${names.length}</div></div>`;
+  customerData.forEach((cust,idx)=>{
+    if(idx>0)content+='<div class="page-break"></div>';
+    content+=`<div class="customer-section">`;
+    content+=`<div class="customer-title">${idx+1}. ${escapeHtml(cust.name)}</div>`;
+    // 汇总信息
+    if(cust.ov){
+      content+=`<div class="summary-row">
+        <div class="summary-item"><span class="label">炉数：</span><span class="value">${num(cust.ov.furnace)}</span></div>
+        <div class="summary-item"><span class="label">板件数量：</span><span class="value">${num(cust.ov.board_count)}</span></div>
+        <div class="summary-item"><span class="label">总时长：</span><span class="value">${formatVal(cust.ov.duration_min,1)} min</span></div>
+        <div class="summary-item"><span class="label">清漆：</span><span class="value">${formatVal(cust.ov.clear_paint_g,2)}g</span></div>
+        <div class="summary-item"><span class="label">色漆：</span><span class="value">${formatVal(cust.ov.color_paint_g,2)}g</span></div>
+      </div>`;
     }
     // 日聚合表
-    const daily=dailyData.filter(d=>d.customer_name===name);
-    // 需要从API获取，简化处理
-  }
-  content+='</body></html>';
+    content+=`<div class="table-title">日聚合数据（共 ${cust.daily.length} 天）</div>`;
+    if(cust.daily.length>0){
+      const sorted=[...cust.daily].sort((a,b)=>new Date(a.record_date)-new Date(b.record_date));
+      content+=`<table><thead><tr><th style="width:12%">日期</th><th style="width:10%">炉数</th><th style="width:12%">板件数量</th><th style="width:12%">时长(min)</th><th style="width:13%">清漆(g)</th><th style="width:13%">色漆(g)</th><th style="width:13%">底漆(g)</th><th style="width:15%">珍珠(g)</th></tr></thead><tbody>`;
+      sorted.forEach(d=>{
+        content+=`<tr><td>${formatDate(d.record_date)}</td><td>${num(d.furnace)}</td><td>${num(d.board_count)}</td><td>${formatVal(d.duration_min,1)}</td><td>${formatVal(d.clear_paint_g,2)}</td><td>${formatVal(d.color_paint_g,2)}</td><td>${formatVal(d.primer_paint_g,2)}</td><td>${formatVal(d.pearl_paint_g,2)}</td></tr>`;
+      });
+      content+=`</tbody></table>`;
+    }else{
+      content+=`<div class="no-data">暂无日聚合数据</div>`;
+    }
+    // 明细表
+    content+=`<div class="table-title">作业明细（共 ${cust.records.length} 条）</div>`;
+    if(cust.records.length>0){
+      content+=`<table><thead><tr><th style="width:10%">日期</th><th style="width:10%">设备</th><th style="width:8%">品牌</th><th style="width:10%">车系</th><th style="width:10%">车型</th><th style="width:18%">部件</th><th style="width:6%">板件</th><th style="width:14%">起始时间</th><th style="width:14%">结束时间</th></tr></thead><tbody>`;
+      cust.records.forEach(r=>{
+        content+=`<tr><td>${formatDate(r.record_date)}</td><td>${escapeHtml(r.device||'')}</td><td>${escapeHtml(r.brand||'')}</td><td>${escapeHtml(r.car_series||'')}</td><td>${escapeHtml(r.car_model||'')}</td><td>${escapeHtml(r.parts||'')}</td><td>${num(r.board_count)}</td><td>${formatDateTime(r.start_time)}</td><td>${formatDateTime(r.end_time)}</td></tr>`;
+      });
+      content+=`</tbody></table>`;
+    }else{
+      content+=`<div class="no-data">暂无明细数据</div>`;
+    }
+    content+=`</div>`;
+  });
+  content+=`</body></html>`;
+  printWin.document.open();
   printWin.document.write(content);
   printWin.document.close();
-  setTimeout(()=>printWin.print(),500);
-  showToast('导出完成','success');
+  // 等待内容渲染完成后打印
+  printWin.onload=function(){
+    setTimeout(()=>{
+      printWin.print();
+    },300);
+  };
+  // 兜底：如果onload没触发，1秒后强制打印
+  setTimeout(()=>{try{printWin.print();}catch(e){}},1000);
+  showToast('PDF已生成，请在打印窗口中选择"另存为PDF"','success');
 }
 
 // ========== 工具 ==========

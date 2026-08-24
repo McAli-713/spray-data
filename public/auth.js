@@ -1,31 +1,33 @@
 /**
  * 共享认证模块 - 所有页面引用
- * 功能：JWT token 管理、30分钟无操作自动登出、活动时间追踪
+ * 功能：JWT token 管理（sessionStorage，关闭标签页自动登出）、30分钟无操作自动登出、活动时间追踪
  */
 const Auth = (function(){
   const TOKEN_KEY = 'spray_token';
   const USER_KEY = 'spray_user';
   const LAST_ACTIVE_KEY = 'spray_last_active';
   const TIMEOUT_MINUTES = 30; // 30分钟无操作自动登出
+  // 使用 sessionStorage：关闭浏览器标签页后自动清除，防止数据泄露
+  const store = sessionStorage;
 
-  function getToken(){ return localStorage.getItem(TOKEN_KEY); }
-  function getUser(){ try{ return JSON.parse(localStorage.getItem(USER_KEY)||'null'); }catch(e){ return null; } }
-  function getLastActive(){ return parseInt(localStorage.getItem(LAST_ACTIVE_KEY)||'0'); }
+  function getToken(){ return store.getItem(TOKEN_KEY); }
+  function getUser(){ try{ return JSON.parse(store.getItem(USER_KEY)||'null'); }catch(e){ return null; } }
+  function getLastActive(){ return parseInt(store.getItem(LAST_ACTIVE_KEY)||'0'); }
 
   function setAuth(token, user){
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    store.setItem(TOKEN_KEY, token);
+    store.setItem(USER_KEY, JSON.stringify(user));
     updateActive();
   }
 
   function clearAuth(){
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(LAST_ACTIVE_KEY);
+    store.removeItem(TOKEN_KEY);
+    store.removeItem(USER_KEY);
+    store.removeItem(LAST_ACTIVE_KEY);
   }
 
   function updateActive(){
-    localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now()));
+    store.setItem(LAST_ACTIVE_KEY, String(Date.now()));
   }
 
   function isExpired(){
