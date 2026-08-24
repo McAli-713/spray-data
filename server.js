@@ -10,7 +10,21 @@ require('dotenv').config();
 let canvasLib = null;
 try { canvasLib = require('canvas'); } catch(e) { canvasLib = null; }
 
-const EXCEL_PROTECT_PASSWORD = process.env.EXCEL_PROTECT_PASSWORD || 'Curverobot@2026';
+// ========== Excel 文件加密（可选依赖 xlsx-populate，未安装则仅工作表保护） ==========
+let xlsxPopulate = null;
+try { xlsxPopulate = require('xlsx-populate'); } catch(e) { xlsxPopulate = null; }
+const EXCEL_PROTECT_PASSWORD = process.env.EXCEL_PROTECT_PASSWORD || '53931526';
+// 将 exceljs 生成的 buffer 用 xlsx-populate 加文件打开密码
+async function encryptWorkbookBuffer(buffer, password) {
+  if (!xlsxPopulate) return buffer;
+  try {
+    const wb = await xlsxPopulate.fromDataAsync(buffer);
+    return await wb.outputAsync({ password });
+  } catch(e) {
+    console.warn('Excel文件加密失败，返回未加密文件:', e.message);
+    return buffer;
+  }
+}
 
 function generateWatermarkImage(text) {
   if (!canvasLib) return null;
@@ -617,15 +631,144 @@ app.get('/api/export/:customer', authRequired, async (req, res) => {
         password: EXCEL_PROTECT_PASSWORD
       };
     } catch(e) { /* 兼容旧版ExcelJS */ }
+    const xlsxBuffer = await workbook.xlsx.writeBuffer();
+    const finalBuffer = await encryptWorkbookBuffer(xlsxBuffer, EXCEL_PROTECT_PASSWORD);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(customerName)}_${Date.now()}.xlsx`);
-    await workbook.xlsx.write(res);
-    res.end();
+    res.setHeader('Content-Length', finalBuffer.length);
+    res.end(finalBuffer);
   } catch (err) {
     serverError(res, err, '导出失败');
   }
 });
 
+// ========== 批量导出 Excel（多客户，每个客户一个工作表，文件加密） ==========
+app.post('/api/export/batch', authRequired, async (req, res) => {
+  try {
+    const { customers, columns } = req.body || {};
+    const scope = await getUserAccessScope(req.userId);
+    if (!scope.canExport && req.role !== 'admin') {
+      return res.status(403).json({ error: '您没有导出数据的权限' });
+    }
+    if (!customers || !Array.isArray(customers) || customers.length === 0) {
+      return res.status(400).json({ error: '请至少选择一个客户' });
+    }
+    // 权限过滤
+    const allowedCustomers = scope.customers
+      ? customers.filter(c => scope.customers.includes(c))
+      : customers;
+    if (allowedCustomers.length === 0) {
+      return res.status(403).json({ error: '无权访问所选客户数据' });
+    }
+    const workbook = new ExcelJS.Workbook();
+    const exportTime = new Date().toLocaleString('zh-CN', { hour12: false });
+    const titleText = `机密・云曲线・${req.username}・${exportTime}`;
+    // 列定义
+    const baseCols = [
+      { header: '时间', key: 'record_date', width: 12 },
+      { header: '设备', key: 'device', width: 18 },
+      { header: '品牌', key: 'brand', width: 12 },
+      { header: '车系', key: 'car_series', width: 14 },
+      { header: '车型', key: 'car_model', width: 18 },
+      { header: '部件', key: 'parts', width: 30 },
+      { header: '板件数量', key: 'board_count', width: 10 },
+      { header: '起始时间', key: 'start_time', width: 20 },
+      { header: '结束时间', key: 'end_time', width: 20 }
+    ];
+    const optionalCols = {
+      duration_min: { header: '时长(min)', key: 'duration_min', width: 12 },
+      clear_paint_g: { header: '清漆用量(g)', key: 'clear_paint_g', width: 12 },
+      color_paint_g: { header: '色漆用量(g)', key: 'color_paint_g', width: 12 },
+      pearl_paint_g: { header: '珍珠用量(g)', key: 'pearl_paint_g', width: 12 },
+      primer_paint_g: { header: '底漆用量()', key: 'primer_paint_g', width: 12 }
+    };
+    let selectedOptional = Object.keys(optionalCols);
+    if (columns && Array.isArray(columns)) {
+      selectedOptional = columns.filter(k => optionalCols[k]);
+    }
+    const allCols = [...baseCols, ...selectedOptional.map(k => optionalCols[k])];
+    const headerStr = `&C&"宋体,Regular"&9&K808080${titleText}`;
+    for (const customerName of allowedCustomers) {
+      const records = await getCustomerRecords(customerName, scope);
+      const sheetName = customerName.substring(0, 31);
+      const ws = workbook.addWorksheet(sheetName);
+      ws.columns = allCols;
+      const totalCols = ws.columns.length;
+      // 第1行：标题
+      const titleRow = ws.getRow(1);
+      titleRow.getCell(1).value = titleText;
+      titleRow.getCell(1).font = { bold: true, size: 12, color: { argb: 'FFC00000' } };
+      titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      titleRow.height = 24;
+      ws.mergeCells(1, 1, 1, totalCols);
+      // 第2行：表头
+      const headerRow = ws.getRow(2);
+      headerRow.font = { bold: true };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+      headerRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      // 数据行
+      records.forEach(r => {
+        ws.addRow({
+          ...r,
+          record_date: r.record_date ? new Date(r.record_date).toISOString().split('T')[0] : '',
+          start_time: r.start_time ? new Date(r.start_time).toLocaleString('zh-CN') : '',
+          end_time: r.end_time ? new Date(r.end_time).toLocaleString('zh-CN') : ''
+        });
+      });
+      // 工作表保护：禁止编辑，允许选择/复制/打印
+      ws.protection = {
+        sheet: true,
+        password: EXCEL_PROTECT_PASSWORD,
+        objects: true,
+        scenarios: true,
+        formatCells: false,
+        formatColumns: false,
+        formatRows: false,
+        insertColumns: false,
+        insertRows: false,
+        insertHyperlinks: false,
+        deleteColumns: false,
+        deleteRows: false,
+        sort: false,
+        autoFilter: false,
+        pivotTables: false,
+        selectLockedCells: true,
+        selectUnlockedCells: true
+      };
+      ws.eachRow({ includeEmpty: false }, row => {
+        row.eachCell({ includeEmpty: false }, cell => {
+          cell.protection = { locked: true };
+        });
+      });
+      // 页眉水印
+      ws.headerFooter = {
+        oddHeader: headerStr,
+        evenHeader: headerStr,
+        firstHeader: headerStr,
+        differentFirst: false,
+        differentOddEven: false
+      };
+    }
+    // 工作簿结构保护
+    try {
+      workbook.security = {
+        workbookStructure: true,
+        windows: true,
+        password: EXCEL_PROTECT_PASSWORD
+      };
+    } catch(e) { /* 兼容旧版 */ }
+    // 生成 buffer 并文件加密
+    const xlsxBuffer = await workbook.xlsx.writeBuffer();
+    const finalBuffer = await encryptWorkbookBuffer(xlsxBuffer, EXCEL_PROTECT_PASSWORD);
+    const filename = `云曲线数据导出_${Date.now()}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.setHeader('Content-Length', finalBuffer.length);
+    res.end(finalBuffer);
+  } catch (err) {
+    serverError(res, err, '批量导出失败');
+  }
+});
 // ========== 用户列配置（关联账号） ==========
 app.get('/api/col-config', authRequired, async (req, res) => {
   try {

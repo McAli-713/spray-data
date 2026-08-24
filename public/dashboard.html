@@ -146,7 +146,7 @@ tr.detail-row:hover td{background:#f0f7ff}
     <button class="btn btn-secondary btn-sm" onclick="toggleFilterPanel()" id="filterToggleBtn">🔍 筛选</button>
     <button class="btn btn-secondary btn-sm" onclick="openColSetting()">⚙ 列设置</button>
     <button class="btn btn-secondary btn-sm" id="adminBackBtn" style="display:none" onclick="location.href='/admin'">⚙ 管理后台</button>
-    <button class="btn btn-secondary btn-sm" onclick="exportExcel()" id="exportExcelBtn">📥 导出Excel</button>
+    <button class="btn btn-secondary btn-sm" onclick="openExcelExportModal()" id="exportExcelBtn">📥 导出Excel</button>
     <button class="btn btn-secondary btn-sm" onclick="openExportModal()" id="exportBtn">导出PDF</button>
     <button class="btn btn-secondary btn-sm" onclick="logout()">退出</button>
   </div>
@@ -281,6 +281,41 @@ tr.detail-row:hover td{background:#f0f7ff}
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeExportModal()">取消</button>
       <button class="btn btn-primary" onclick="doExport()">确认导出</button>
+    </div>
+  </div>
+</div>
+<!-- Excel导出弹窗 -->
+<div class="modal-overlay" id="excelExportModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3>导出Excel（加密保护）</h3>
+      <button class="modal-close" onclick="closeExcelExportModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:#666;margin-bottom:10px">选择客户和数据列，导出的Excel将加密（密码53931526）且禁止修改内容。</p>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">选择客户</label>
+        <input type="text" id="excelExportSearch" placeholder="搜索客户名称..." oninput="renderExcelExportList()" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;margin-bottom:8px">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button class="btn btn-outline btn-sm" onclick="selectAllExcelExport()" style="flex:1">一键全选</button>
+          <button class="btn btn-outline btn-sm" onclick="clearExcelExport()" style="flex:1">一键清除</button>
+        </div>
+        <div id="excelExportList" style="max-height:180px;overflow-y:auto;border:1px solid #eee;border-radius:5px"></div>
+      </div>
+      <div style="margin-bottom:4px">
+        <label style="font-size:12px;font-weight:600;color:#333;display:block;margin-bottom:4px">可选数据列（默认全选）</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="excel-col-check" value="duration_min" checked>时长(min)</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="excel-col-check" value="clear_paint_g" checked>清漆用量</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="excel-col-check" value="color_paint_g" checked>色漆用量</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="excel-col-check" value="pearl_paint_g" checked>珍珠用量</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="excel-col-check" value="primer_paint_g" checked>底漆用量</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeExcelExportModal()">取消</button>
+      <button class="btn btn-primary" onclick="doExcelExport()">确认导出</button>
     </div>
   </div>
 </div>
@@ -897,6 +932,64 @@ function applyColSetting(){
 }
 document.getElementById('colSettingModal').addEventListener('click',e=>{if(e.target.id==='colSettingModal')closeColSetting();});
 
+// ========== 导出Excel（批量+加密） ==========
+let excelExportSelected=new Set();
+function openExcelExportModal(){
+  excelExportSelected=new Set();
+  // 默认选中当前筛选后的所有客户
+  getFilteredOverview().forEach(d=>excelExportSelected.add(d.customer_name));
+  // 默认勾选当前列设置中启用的可选列
+  const optionalKeys=['duration_min','clear_paint_g','color_paint_g','pearl_paint_g','primer_paint_g'];
+  document.querySelectorAll('.excel-col-check').forEach(cb=>{
+    cb.checked=displayConfig[cb.value]!==false;
+  });
+  document.getElementById('excelExportSearch').value='';
+  renderExcelExportList();
+  document.getElementById('excelExportModal').classList.add('show');
+}
+function closeExcelExportModal(){document.getElementById('excelExportModal').classList.remove('show');}
+function renderExcelExportList(){
+  const kw=document.getElementById('excelExportSearch').value.trim().toLowerCase();
+  const names=getFilteredOverview().map(d=>d.customer_name).filter(n=>!kw||n.toLowerCase().includes(kw));
+  document.getElementById('excelExportList').innerHTML=names.map(n=>`
+    <div style="display:flex;align-items:center;padding:7px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer" onclick="toggleExcelExport('${escapeHtml(n)}')">
+      <input type="checkbox" ${excelExportSelected.has(n)?'checked':''} style="margin-right:10px" onclick="event.stopPropagation();toggleExcelExport('${escapeHtml(n)}')">
+      <label style="cursor:pointer;flex:1;font-size:13px">${escapeHtml(n)}</label>
+    </div>`).join('')||'<div style="padding:20px;text-align:center;color:#999">无匹配客户</div>';
+}
+function toggleExcelExport(name){if(excelExportSelected.has(name))excelExportSelected.delete(name);else excelExportSelected.add(name);renderExcelExportList();}
+function selectAllExcelExport(){getFilteredOverview().forEach(d=>excelExportSelected.add(d.customer_name));renderExcelExportList();}
+function clearExcelExport(){excelExportSelected.clear();renderExcelExportList();}
+async function doExcelExport(){
+  if(excelExportSelected.size===0){showToast('请至少选择一个客户','error');return;}
+  const customers=[...excelExportSelected];
+  const columns=[];
+  document.querySelectorAll('.excel-col-check:checked').forEach(cb=>columns.push(cb.value));
+  closeExcelExportModal();
+  showLoading('正在生成加密Excel...');
+  try{
+    const res=await api('/api/export/batch',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({customers,columns})
+    });
+    if(!res.ok){
+      const err=await res.json().catch(()=>({error:'导出失败'}));
+      throw new Error(err.error||'导出失败');
+    }
+    const blob=await res.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`云曲线数据导出_${new Date().toISOString().slice(0,10)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('Excel导出成功，打开密码：53931526','success');
+  }catch(e){
+    showToast('导出失败：'+e.message,'error');
+  }finally{
+    hideLoading();
+  }
+}
 // ========== 导出PDF ==========
 function openExportModal(){
   renderExportList();
@@ -918,28 +1011,55 @@ function clearExport(){exportSelected.clear();renderExportList();}
 async function doExport(){
   if(exportSelected.size===0){showToast('请至少选择一个客户','error');return;}
   closeExportModal();
-  showLoading('正在生成PDF，请稍候...');
+  showLoading('正在生成PDF（含图表），请稍候...');
   const names=[...exportSelected];
   const exportTime=new Date().toLocaleString('zh-CN',{hour12:false});
   const exporter=userInfo?userInfo.username:'未知';
-  // 并行获取每个客户的日聚合和明细数据
+  const watermarkText=`机密・云曲线・${exporter}・${exportTime}`;
+  // ========== 1. 获取汇总图表（首页已渲染的ECharts实例） ==========
+  const summaryCharts=[];
+  const chartDefs=[
+    {inst:chart1Inst,title:'炉数 - 板件数量'},
+    {inst:chart2Inst,title:'单炉平均时长'},
+    {inst:chart3Inst,title:'客户板件数量排名'},
+    {inst:chartPartsInst,title:'部件数量统计'}
+  ];
+  chartDefs.forEach(c=>{
+    if(c.inst){
+      try{
+        summaryCharts.push({title:c.title,dataUrl:c.inst.getDataURL({type:'png',pixelRatio:2,backgroundColor:'#fff'})});
+      }catch(e){}
+    }
+  });
+  // ========== 2. 并行获取每个客户的数据 + 生成详情图表 ==========
   const customerData=[];
   try{
-    await Promise.all(names.map(async (name)=>{
+    for(const name of names){
       try{
-        const [dailyRes,recordsRes]=await Promise.all([
+        const [dailyRes,recordsRes,partsRes]=await Promise.all([
           api('/api/daily/'+encodeURIComponent(name)),
-          api('/api/records/'+encodeURIComponent(name))
+          api('/api/records/'+encodeURIComponent(name)),
+          api('/api/parts-stats?customer='+encodeURIComponent(name))
         ]);
         const daily=dailyRes.ok?await dailyRes.json():[];
         const records=recordsRes.ok?await recordsRes.json():[];
+        const parts=partsRes.ok?await partsRes.json():[];
         const ov=overviewData.find(d=>d.customer_name===name);
-        customerData.push({name,ov,daily,records});
+        // 生成趋势图（炉数/板件）
+        let trendImg='';
+        if(daily.length>0){
+          trendImg=renderChartToDataURL(daily,'trend',name);
+        }
+        // 生成部件统计图
+        let partsImg='';
+        if(parts.length>0){
+          partsImg=renderChartToDataURL(parts,'parts',name);
+        }
+        customerData.push({name,ov,daily,records,parts,trendImg,partsImg});
       }catch(e){
-        customerData.push({name,ov:overviewData.find(d=>d.customer_name===name),daily:[],records:[]});
+        customerData.push({name,ov:overviewData.find(d=>d.customer_name===name),daily:[],records:[],parts:[],trendImg:'',partsImg:''});
       }
-    }));
-    // 按选中顺序排序
+    }
     customerData.sort((a,b)=>names.indexOf(a.name)-names.indexOf(b.name));
   }catch(e){
     hideLoading();
@@ -947,54 +1067,103 @@ async function doExport(){
     return;
   }
   hideLoading();
-  // 生成打印HTML（A4横向，防溢出）
+  // ========== 3. 生成打印HTML（竖版A4 + 水印 + 图表 + 汇总） ==========
   const printWin=window.open('','_blank');
   if(!printWin){showToast('请允许弹出窗口以导出PDF','error');return;}
+  // 水印：用SVG data URL作为背景，平铺旋转文字
+  const watermarkSvg=`data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><text x="150" y="100" font-size="16" fill="rgba(192,0,0,0.08)" text-anchor="middle" transform="rotate(-30 150 100)" font-family="Microsoft YaHei">${watermarkText}</text></svg>`)}`;
   let content=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>喷涂数据导出报告</title>
 <style>
-@page{size:A4 landscape;margin:8mm;}
+@page{size:A4 portrait;margin:12mm;}
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:10px;color:#333;padding:0;line-height:1.4;}
-.report-header{text-align:center;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #1a73e8;}
-.report-header h1{font-size:16px;color:#1a73e8;margin-bottom:4px;}
+body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:10px;color:#333;padding:0;line-height:1.5;
+  background-image:url('${watermarkSvg}');background-repeat:repeat;background-size:300px 200px;}
+.report-header{text-align:center;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #1a73e8;}
+.report-header h1{font-size:18px;color:#1a73e8;margin-bottom:4px;}
 .report-header .meta{font-size:10px;color:#888;}
 .watermark-header{text-align:center;font-size:11px;color:#c00;font-weight:bold;margin-bottom:8px;letter-spacing:1px;}
+.summary-section{background:#f5f9ff;border:1px solid #d0e3ff;border-radius:6px;padding:10px;margin-bottom:12px;}
+.summary-section h3{font-size:12px;color:#1a73e8;margin-bottom:6px;}
+.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.summary-item{background:#fff;padding:5px 8px;border-radius:4px;text-align:center;}
+.summary-item .label{font-size:9px;color:#888;}
+.summary-item .value{font-size:14px;font-weight:bold;color:#1a73e8;}
+.chart-section{margin-bottom:12px;page-break-inside:avoid;}
+.chart-section h3{font-size:12px;color:#333;margin-bottom:4px;}
+.chart-img{width:100%;max-height:280px;object-fit:contain;border:1px solid #eee;border-radius:4px;}
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
 .customer-section{margin-bottom:14px;page-break-inside:avoid;}
-.customer-section:last-child{page-break-after:auto;}
-.customer-title{font-size:13px;color:#1a73e8;font-weight:bold;border-bottom:1px solid #1a73e8;padding-bottom:3px;margin-bottom:6px;}
-.summary-row{display:flex;gap:16px;margin-bottom:6px;font-size:10px;}
-.summary-item{background:#f5f7fa;padding:3px 8px;border-radius:3px;}
-.summary-item .label{color:#888;}
-.summary-item .value{font-weight:bold;color:#1a73e8;}
-table{width:100%;border-collapse:collapse;font-size:9px;margin-bottom:8px;table-layout:fixed;word-wrap:break-word;word-break:break-all;}
-th{background:#f5f7fa;padding:4px 5px;text-align:left;border-bottom:1.5px solid #e8e8e8;font-weight:600;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-td{padding:3px 5px;border-bottom:0.5px solid #f0f0f0;vertical-align:top;word-wrap:break-word;word-break:break-all;overflow:hidden;}
+.customer-title{font-size:14px;color:#1a73e8;font-weight:bold;border-bottom:1px solid #1a73e8;padding-bottom:3px;margin-bottom:6px;}
+.customer-summary{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px;font-size:10px;}
+.customer-summary .item{background:#f5f7fa;padding:3px 8px;border-radius:3px;}
+.customer-summary .item .label{color:#888;}
+.customer-summary .item .value{font-weight:bold;color:#1a73e8;}
+table{width:100%;border-collapse:collapse;font-size:8.5px;margin-bottom:8px;table-layout:fixed;word-wrap:break-word;word-break:break-all;}
+th{background:#f5f7fa;padding:4px 4px;text-align:left;border-bottom:1.5px solid #e8e8e8;font-weight:600;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+td{padding:3px 4px;border-bottom:0.5px solid #f0f0f0;vertical-align:top;word-wrap:break-word;word-break:break-all;overflow:hidden;}
 tr:nth-child(even) td{background:#fafbfc;}
 .table-title{font-size:11px;font-weight:bold;color:#333;margin:6px 0 3px 0;}
 .no-data{text-align:center;color:#999;padding:10px;font-size:10px;}
 .page-break{page-break-before:always;}
 </style></head><body>`;
-  content+=`<div class="watermark-header">机密・云曲线・${escapeHtml(exporter)}・${escapeHtml(exportTime)}</div>`;
+  // 报告头
+  content+=`<div class="watermark-header">${escapeHtml(watermarkText)}</div>`;
   content+=`<div class="report-header"><h1>云曲线智能喷涂数据看板 - 导出报告</h1><div class="meta">导出人：${escapeHtml(exporter)} | 导出时间：${escapeHtml(exportTime)} | 客户数：${names.length}</div></div>`;
+  // 汇总数据（全部客户合计）
+  const allTotal=customerData.reduce((a,c)=>({
+    furnace:a.furnace+num(c.ov?c.ov.furnace:0),
+    board:a.board+num(c.ov?c.ov.board_count:0),
+    duration:a.duration+num(c.ov?c.ov.duration_min:0)
+  }),{furnace:0,board:0,duration:0});
+  content+=`<div class="summary-section"><h3>📊 汇总数据（共 ${names.length} 个客户）</h3>
+    <div class="summary-grid">
+      <div class="summary-item"><div class="label">客户数</div><div class="value">${names.length}</div></div>
+      <div class="summary-item"><div class="label">总炉数</div><div class="value">${allTotal.furnace}</div></div>
+      <div class="summary-item"><div class="label">总板件数</div><div class="value">${allTotal.board}</div></div>
+      <div class="summary-item"><div class="label">总时长(min)</div><div class="value">${formatVal(allTotal.duration,1)}</div></div>
+    </div></div>`;
+  // 汇总图表
+  if(summaryCharts.length>0){
+    content+=`<div class="chart-section"><h3>📈 汇总图表</h3>`;
+    // 两个一行
+    for(let i=0;i<summaryCharts.length;i+=2){
+      content+=`<div class="chart-row">`;
+      for(let j=i;j<Math.min(i+2,summaryCharts.length);j++){
+        content+=`<div><div style="font-size:10px;color:#666;margin-bottom:2px">${escapeHtml(summaryCharts[j].title)}</div><img src="${summaryCharts[j].dataUrl}" class="chart-img"></div>`;
+      }
+      content+=`</div>`;
+    }
+    content+=`</div>`;
+  }
+  // 每个客户详情
   customerData.forEach((cust,idx)=>{
     if(idx>0)content+='<div class="page-break"></div>';
     content+=`<div class="customer-section">`;
     content+=`<div class="customer-title">${idx+1}. ${escapeHtml(cust.name)}</div>`;
-    // 汇总信息
+    // 客户汇总
     if(cust.ov){
-      content+=`<div class="summary-row">
-        <div class="summary-item"><span class="label">炉数：</span><span class="value">${num(cust.ov.furnace)}</span></div>
-        <div class="summary-item"><span class="label">板件数量：</span><span class="value">${num(cust.ov.board_count)}</span></div>
-        <div class="summary-item"><span class="label">总时长：</span><span class="value">${formatVal(cust.ov.duration_min,1)} min</span></div>
-        <div class="summary-item"><span class="label">清漆：</span><span class="value">${formatVal(cust.ov.clear_paint_g,2)}g</span></div>
-        <div class="summary-item"><span class="label">色漆：</span><span class="value">${formatVal(cust.ov.color_paint_g,2)}g</span></div>
+      content+=`<div class="customer-summary">
+        <div class="item"><span class="label">炉数：</span><span class="value">${num(cust.ov.furnace)}</span></div>
+        <div class="item"><span class="label">板件：</span><span class="value">${num(cust.ov.board_count)}</span></div>
+        <div class="item"><span class="label">时长：</span><span class="value">${formatVal(cust.ov.duration_min,1)}min</span></div>
+        <div class="item"><span class="label">清漆：</span><span class="value">${formatVal(cust.ov.clear_paint_g,2)}g</span></div>
+        <div class="item"><span class="label">色漆：</span><span class="value">${formatVal(cust.ov.color_paint_g,2)}g</span></div>
+        <div class="item"><span class="label">底漆：</span><span class="value">${formatVal(cust.ov.primer_paint_g,2)}g</span></div>
+        <div class="item"><span class="label">珍珠：</span><span class="value">${formatVal(cust.ov.pearl_paint_g,2)}g</span></div>
       </div>`;
+    }
+    // 客户图表
+    if(cust.trendImg||cust.partsImg){
+      content+=`<div class="chart-row">`;
+      if(cust.trendImg)content+=`<div><div style="font-size:10px;color:#666;margin-bottom:2px">炉数/板件趋势</div><img src="${cust.trendImg}" class="chart-img"></div>`;
+      if(cust.partsImg)content+=`<div><div style="font-size:10px;color:#666;margin-bottom:2px">部件数量统计</div><img src="${cust.partsImg}" class="chart-img"></div>`;
+      content+=`</div>`;
     }
     // 日聚合表
     content+=`<div class="table-title">日聚合数据（共 ${cust.daily.length} 天）</div>`;
     if(cust.daily.length>0){
       const sorted=[...cust.daily].sort((a,b)=>new Date(a.record_date)-new Date(b.record_date));
-      content+=`<table><thead><tr><th style="width:12%">日期</th><th style="width:10%">炉数</th><th style="width:12%">板件数量</th><th style="width:12%">时长(min)</th><th style="width:13%">清漆(g)</th><th style="width:13%">色漆(g)</th><th style="width:13%">底漆(g)</th><th style="width:15%">珍珠(g)</th></tr></thead><tbody>`;
+      content+=`<table><thead><tr><th style="width:12%">日期</th><th style="width:9%">炉数</th><th style="width:11%">板件</th><th style="width:11%">时长</th><th style="width:12%">清漆</th><th style="width:12%">色漆</th><th style="width:11%">底漆</th><th style="width:12%">珍珠</th></tr></thead><tbody>`;
       sorted.forEach(d=>{
         content+=`<tr><td>${formatDate(d.record_date)}</td><td>${num(d.furnace)}</td><td>${num(d.board_count)}</td><td>${formatVal(d.duration_min,1)}</td><td>${formatVal(d.clear_paint_g,2)}</td><td>${formatVal(d.color_paint_g,2)}</td><td>${formatVal(d.primer_paint_g,2)}</td><td>${formatVal(d.pearl_paint_g,2)}</td></tr>`;
       });
@@ -1005,7 +1174,7 @@ tr:nth-child(even) td{background:#fafbfc;}
     // 明细表
     content+=`<div class="table-title">作业明细（共 ${cust.records.length} 条）</div>`;
     if(cust.records.length>0){
-      content+=`<table><thead><tr><th style="width:10%">日期</th><th style="width:10%">设备</th><th style="width:8%">品牌</th><th style="width:10%">车系</th><th style="width:10%">车型</th><th style="width:18%">部件</th><th style="width:6%">板件</th><th style="width:14%">起始时间</th><th style="width:14%">结束时间</th></tr></thead><tbody>`;
+      content+=`<table><thead><tr><th style="width:10%">日期</th><th style="width:10%">设备</th><th style="width:7%">品牌</th><th style="width:9%">车系</th><th style="width:9%">车型</th><th style="width:16%">部件</th><th style="width:5%">板件</th><th style="width:17%">起始时间</th><th style="width:17%">结束时间</th></tr></thead><tbody>`;
       cust.records.forEach(r=>{
         content+=`<tr><td>${formatDate(r.record_date)}</td><td>${escapeHtml(r.device||'')}</td><td>${escapeHtml(r.brand||'')}</td><td>${escapeHtml(r.car_series||'')}</td><td>${escapeHtml(r.car_model||'')}</td><td>${escapeHtml(r.parts||'')}</td><td>${num(r.board_count)}</td><td>${formatDateTime(r.start_time)}</td><td>${formatDateTime(r.end_time)}</td></tr>`;
       });
@@ -1019,15 +1188,49 @@ tr:nth-child(even) td{background:#fafbfc;}
   printWin.document.open();
   printWin.document.write(content);
   printWin.document.close();
-  // 等待内容渲染完成后打印
   printWin.onload=function(){
-    setTimeout(()=>{
-      printWin.print();
-    },300);
+    setTimeout(()=>{printWin.print();},500);
   };
-  // 兜底：如果onload没触发，1秒后强制打印
-  setTimeout(()=>{try{printWin.print();}catch(e){}},1000);
-  showToast('PDF已生成，请在打印窗口中选择"另存为PDF"','success');
+  setTimeout(()=>{try{printWin.print();}catch(e){}},1500);
+  showToast('PDF已生成（竖版+水印+图表），请在打印窗口选择"另存为PDF"','success');
+}
+// 辅助：将数据渲染为ECharts图表并返回dataURL（临时隐藏div）
+function renderChartToDataURL(data,type,customerName){
+  const div=document.createElement('div');
+  div.style.cssText='width:700px;height:280px;position:absolute;left:-9999px;top:0;';
+  document.body.appendChild(div);
+  const chart=echarts.init(div);
+  try{
+    if(type==='trend'){
+      const sorted=[...data].sort((a,b)=>new Date(a.record_date)-new Date(b.record_date));
+      chart.setOption({
+        animation:false,
+        tooltip:{trigger:'axis'},
+        legend:{data:['炉数','板件数量'],top:0,textStyle:{fontSize:10}},
+        grid:{left:50,right:30,top:30,bottom:40},
+        xAxis:{type:'category',data:sorted.map(d=>formatDate(d.record_date)),axisLabel:{fontSize:9,rotate:30}},
+        yAxis:[{type:'value',name:'炉数',nameTextStyle:{fontSize:9}},{type:'value',name:'板件',nameTextStyle:{fontSize:9}}],
+        series:[
+          {name:'炉数',type:'bar',data:sorted.map(d=>num(d.furnace)),itemStyle:{color:'#1a73e8'}},
+          {name:'板件数量',type:'line',yAxisIndex:1,data:sorted.map(d=>num(d.board_count)),itemStyle:{color:'#ff9800'},smooth:true}
+        ]
+      });
+    }else if(type==='parts'){
+      const top20=data.slice(0,20);
+      chart.setOption({
+        animation:false,
+        tooltip:{trigger:'axis',formatter:p=>p[0].name+'<br>出现次数: '+p[0].value},
+        grid:{left:100,right:30,top:10,bottom:20},
+        xAxis:{type:'value'},
+        yAxis:{type:'category',data:[...top20].map(d=>d.part_name).reverse(),axisLabel:{fontSize:9}},
+        series:[{type:'bar',data:[...top20].map(d=>num(d.count)).reverse(),itemStyle:{color:'#9c27b0'},label:{show:true,position:'right',fontSize:9}}]
+      });
+    }
+    return chart.getDataURL({type:'png',pixelRatio:2,backgroundColor:'#fff'});
+  }finally{
+    chart.dispose();
+    document.body.removeChild(div);
+  }
 }
 
 // ========== 工具 ==========
