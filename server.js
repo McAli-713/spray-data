@@ -6,6 +6,14 @@ const multer = require('multer');
 const ExcelJS = require('exceljs');
 require('dotenv').config();
 
+// ========== 全局进程错误防护（防止未捕获异常导致进程崩溃、连接被关闭） ==========
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ 未捕获异常:', err.message, err.stack);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ 未处理的Promise拒绝:', reason);
+});
+
 const {
   initDB, getUserByUsername, getUserById, verifyPassword, listUsers,
   createUser, updateUser, deleteUser,
@@ -276,14 +284,14 @@ function num(v) {
 }
 
 app.post('/api/upload', authRequired, upload.single('file'), async (req, res) => {
-  // 权限检查
-  const scope = await getUserAccessScope(req.userId);
-  if (!scope.canImport && req.role !== 'admin') {
-    return res.status(403).json({ error: '您没有导入数据的权限' });
-  }
-  if (!req.file) return res.status(400).json({ error: '请选择文件' });
-
   try {
+    // 权限检查
+    const scope = await getUserAccessScope(req.userId);
+    if (!scope.canImport && req.role !== 'admin') {
+      return res.status(403).json({ error: '您没有导入数据的权限' });
+    }
+    if (!req.file) return res.status(400).json({ error: '请选择文件' });
+
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(req.file.buffer);
 
@@ -512,6 +520,22 @@ app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'log
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
 app.get('/', (req, res) => res.redirect('/login'));
+
+// ========== 全局错误处理中间件（必须在所有路由之后、listen之前） ==========
+// 处理 multer 上传错误及其他所有未捕获的路由错误
+app.use((err, req, res, next) => {
+  console.error('❌ 全局错误捕获:', err.message, err.stack);
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: '文件过大，最大支持 50MB' });
+  }
+  if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return res.status(400).json({ error: '上传字段名错误，请使用 file 字段' });
+  }
+  if (err.message && err.message.includes('仅支持')) {
+    return res.status(400).json({ error: err.message });
+  }
+  res.status(500).json({ error: '服务器处理请求时出错：' + err.message });
+});
 
 app.listen(PORT, () => {
   console.log(`喷涂数据管理平台运行在端口 ${PORT}`);

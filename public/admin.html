@@ -78,6 +78,7 @@ tr:hover td{background:#f9fbff}
 .toast.error{background:#f44336}
 .empty{text-align:center;padding:40px;color:#999;font-size:14px}
 </style>
+<script src="/auth.js"></script>
 </head>
 <body>
 <div class="topbar">
@@ -136,6 +137,9 @@ tr:hover td{background:#f9fbff}
       <button class="modal-close" onclick="closeUserModal()">&times;</button>
     </div>
     <div class="modal-body">
+      <div id="userModalHint" style="background:#e8f4ff;color:#1a73e8;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:14px">
+        💡 新建子账号后，系统会自动弹出权限配置窗口，可设置该账号可查看的客户、日期范围、数据列及导入/导出权限。
+      </div>
       <input type="hidden" id="editUserId">
       <div class="form-group">
         <label>用户名</label>
@@ -193,7 +197,7 @@ tr:hover td{background:#f9fbff}
 <div class="toast" id="toast"></div>
 
 <script>
-const TOKEN=localStorage.getItem('spray_token');
+// 使用 Auth 模块管理 token（30分钟无操作自动登出）
 const ALL_COLUMNS=[
   {key:'board_count',label:'板件数量'},
   {key:'duration_min',label:'时长(min)'},
@@ -210,19 +214,19 @@ const ALL_COLUMNS=[
 let customerList=[];
 
 // 认证检查
-if(!TOKEN){location.href='/login';}
-fetch('/api/me',{headers:{'Authorization':'Bearer '+TOKEN}})
-  .then(r=>{if(!r.ok)throw new Error();return r.json();})
+if(!Auth.requireAuth()){}
+Auth.fetchAuth('/api/me')
+  .then(r=>r.json())
   .then(d=>{
     if(d.user.role!=='admin'){location.href='/dashboard';return;}
-    document.getElementById('userInfo').textContent='👤 '+d.user.username;
+    document.getElementById('userInfo').textContent='👤 '+d.user.username+'（30分钟无操作自动登出）';
     loadStats();loadUsers();loadCustomers();
   })
-  .catch(()=>{localStorage.clear();location.href='/login';});
+  .catch(()=>{Auth.clearAuth();location.href='/login';});
 
-function logout(){localStorage.clear();location.href='/login';}
+function logout(){Auth.clearAuth();location.href='/login';}
 function showToast(msg,type=''){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+type;setTimeout(()=>t.classList.remove('show'),2500);}
-function api(url,opts={}){return fetch(url,{...opts,headers:{'Authorization':'Bearer '+TOKEN,...(opts.headers||{})}});}
+function api(url,opts={}){return Auth.fetchAuth(url,opts);}
 
 function switchTab(name){
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['users','upload'][i]===name));
@@ -278,6 +282,7 @@ async function loadCustomers(){
 
 function openUserModal(){
   document.getElementById('userModalTitle').textContent='新建用户';
+  document.getElementById('userModalHint').style.display='block';
   document.getElementById('editUserId').value='';
   document.getElementById('editUsername').value='';
   document.getElementById('editPassword').value='';
@@ -287,6 +292,7 @@ function openUserModal(){
 }
 function editUser(id,username,role,active){
   document.getElementById('userModalTitle').textContent='编辑用户';
+  document.getElementById('userModalHint').style.display='none';
   document.getElementById('editUserId').value=id;
   document.getElementById('editUsername').value=username;
   document.getElementById('editPassword').value='';
@@ -314,7 +320,12 @@ async function saveUser(){
       res=await api('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password,role})});
     }
     if(!res.ok){const d=await res.json();showToast(d.error||'保存失败','error');return;}
+    const saved=await res.json();
     showToast('保存成功','success');closeUserModal();loadUsers();
+    // 新建子账号后自动打开权限配置弹窗
+    if(!id && role==='sub'){
+      setTimeout(()=>openPermModal(saved.id, saved.username),300);
+    }
   }catch(e){showToast('保存失败','error');}
 }
 
@@ -443,21 +454,54 @@ function handleFileSelect(e){if(e.target.files[0])uploadFile(e.target.files[0]);
 
 async function uploadFile(file){
   if(!file.name.match(/\.(xlsx|xls)$/i)){showToast('仅支持 Excel 文件','error');return;}
-  const formData=new FormData();
-  formData.append('file',file);
   const resultEl=document.getElementById('uploadResult');
   resultEl.className='upload-result show';
-  resultEl.innerHTML='⏳ 正在上传并解析...';
-  try{
-    const res=await fetch('/api/upload',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:formData});
-    const data=await res.json();
-    if(!res.ok){resultEl.innerHTML='❌ '+data.error;return;}
-    resultEl.innerHTML=`✅ <strong>${data.message}</strong><br>
-      新增：${data.inserted} 条 | 更新：${data.updated} 条 | 涉及客户：${data.customers.length} 个<br>
-      当前总记录数：${data.totalRecords}`;
-    showToast('导入成功','success');
-    loadStats();
-  }catch(e){resultEl.innerHTML='❌ 上传失败：'+e.message;}
+
+  // 第一步：健康检查，确认服务已启动（解决 Render 冷启动 ERR_CONNECTION_CLOSED）
+  resultEl.innerHTML='⏳ 正在连接服务器...';
+  let serviceReady=false;
+  for(let attempt=0; attempt<6; attempt++){
+    try{
+      const hc=await fetch('/api/health',{cache:'no-store'});
+      if(hc.ok){serviceReady=true;break;}
+    }catch(e){}
+    resultEl.innerHTML=`⏳ 服务正在启动中...（第 ${attempt+1}/6 次重试）`;
+    await new Promise(r=>setTimeout(r,3000));
+  }
+  if(!serviceReady){
+    resultEl.innerHTML='❌ 服务器连接超时。Render免费层冷启动较慢，请<b>刷新页面</b>等待10秒后再试，或升级到付费层。';
+    return;
+  }
+
+  // 第二步：上传文件（带重试）
+  const formData=new FormData();
+  formData.append('file',file);
+  resultEl.innerHTML='⏳ 正在上传并解析数据...';
+
+  for(let attempt=0; attempt<2; attempt++){
+    try{
+      const res=await Auth.fetchAuth('/api/upload',{method:'POST',body:formData});
+      const data=await res.json();
+      if(!res.ok){resultEl.innerHTML='❌ '+data.error;return;}
+      resultEl.innerHTML=`✅ <strong>${data.message}</strong><br>
+        新增：${data.inserted} 条 | 更新：${data.updated} 条 | 涉及客户：${data.customers.length} 个<br>
+        当前总记录数：${data.totalRecords}`;
+      showToast('导入成功','success');
+      loadStats();
+      return;
+    }catch(e){
+      if(attempt===0){
+        resultEl.innerHTML='⏳ 连接中断，正在重试...';
+        await new Promise(r=>setTimeout(r,2000));
+        continue;
+      }
+      resultEl.innerHTML=`❌ 上传失败：${e.message}<br><br>
+        <span style="font-size:12px;color:#666">常见原因：<br>
+        1. Render免费层服务休眠 → 刷新页面等待10秒后重试<br>
+        2. 网络不稳定 → 检查网络连接<br>
+        3. 文件格式不对 → 确认是 .xlsx 格式，第一个sheet名为"汇总表"</span>`;
+    }
+  }
 }
 </script>
 </body>

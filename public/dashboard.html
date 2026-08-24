@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="/auth.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#333;font-size:14px}
@@ -288,7 +289,7 @@ tr.detail-row:hover td{background:#f0f7ff}
 
 <script>
 const APP_TITLE='云曲线智能喷涂数据看板';
-const TOKEN=localStorage.getItem('spray_token');
+// 使用 Auth 模块管理 token（30分钟无操作自动登出）
 let userInfo=null, userScope=null;
 let overviewData=[];
 let currentCustomer=null;
@@ -354,9 +355,9 @@ function saveColConfig(){try{localStorage.setItem(COL_CONFIG_KEY,JSON.stringify(
 function getActiveCols(filterFn){return COLUMN_DEFS.filter(c=>displayConfig[c.key]&&(!filterFn||filterFn(c)));}
 
 // 认证
-if(!TOKEN){location.href='/login';}
-function logout(){localStorage.clear();location.href='/login';}
-function api(url,opts={}){return fetch(url,{...opts,headers:{'Authorization':'Bearer '+TOKEN,...(opts.headers||{})}});}
+if(!Auth.requireAuth()){}
+function logout(){Auth.clearAuth();location.href='/login';}
+function api(url,opts={}){return Auth.fetchAuth(url,opts);}
 
 function showToast(msg,type=''){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+type;setTimeout(()=>t.classList.remove('show'),2500);}
 function showLoading(text='加载中...'){document.getElementById('loadingText').textContent=text;document.getElementById('loadingOverlay').classList.add('show');}
