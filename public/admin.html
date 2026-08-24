@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台 - 云曲线喷涂数据平台</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#333;font-size:14px}
+.topbar{background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.topbar h1{font-size:18px;font-weight:600}
+.topbar .actions{display:flex;gap:10px;align-items:center}
+.topbar .user-info{font-size:13px;opacity:.9}
+.btn{padding:7px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;transition:all .2s;display:inline-flex;align-items:center;gap:5px}
+.btn-primary{background:#fff;color:#1a73e8}
+.btn-primary:hover{background:#e8f0fe}
+.btn-secondary{background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4)}
+.btn-secondary:hover{background:rgba(255,255,255,.3)}
+.btn-blue{background:#1a73e8;color:#fff}
+.btn-blue:hover{background:#1557b0}
+.btn-outline{background:#fff;color:#555;border:1px solid #ddd}
+.btn-outline:hover{border-color:#1a73e8;color:#1a73e8}
+.btn-danger{background:#f44336;color:#fff}
+.btn-danger:hover{background:#d32f2f}
+.btn-sm{padding:4px 10px;font-size:12px}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+.tabs{display:flex;gap:2px;background:#fff;border-radius:8px;padding:4px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.tab{flex:1;padding:10px;text-align:center;cursor:pointer;border-radius:6px;font-size:14px;font-weight:500;color:#666;transition:all .2s}
+.tab.active{background:#1a73e8;color:#fff}
+.tab:hover:not(.active){background:#f0f7ff}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.card{background:#fff;border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card h3{font-size:15px;margin-bottom:14px;color:#333;display:flex;justify-content:space-between;align-items:center}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+.stat-card{background:#fff;border-radius:8px;padding:18px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.stat-card .label{font-size:12px;color:#888;margin-bottom:6px}
+.stat-card .value{font-size:26px;font-weight:700;color:#1a73e8}
+.stat-card .value.green{color:#4caf50}
+.stat-card .value.orange{color:#ff9800}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f5f7fa;padding:10px 12px;text-align:left;font-weight:600;color:#555;border-bottom:2px solid #e8e8e8}
+td{padding:9px 12px;border-bottom:1px solid #f0f0f0}
+tr:hover td{background:#f9fbff}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-admin{background:#e3f2fd;color:#1565c0}
+.badge-sub{background:#f3e5f5;color:#7b1fa2}
+.badge-active{background:#e8f5e9;color:#2e7d32}
+.badge-inactive{background:#ffebee;color:#c62828}
+.perm-tag{display:inline-block;padding:1px 6px;background:#e8f4ff;color:#1a73e8;border-radius:4px;font-size:11px;margin:1px}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;justify-content:center;align-items:center;padding:16px}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-header{padding:14px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center}
+.modal-header h3{font-size:16px}
+.modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:#999;line-height:1}
+.modal-body{padding:18px;overflow-y:auto;flex:1}
+.modal-footer{padding:12px 18px;border-top:1px solid #eee;display:flex;justify-content:flex-end;gap:8px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;color:#555;margin-bottom:5px;font-weight:500}
+.form-group input,.form-group select{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;outline:none}
+.form-group input:focus,.form-group select:focus{border-color:#1a73e8}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.checkbox-group{display:flex;flex-wrap:wrap;gap:8px}
+.checkbox-item{display:flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid #e0e0e0;border-radius:5px;cursor:pointer;font-size:12px}
+.checkbox-item:hover{border-color:#1a73e8;background:#f9fbff}
+.checkbox-item input{cursor:pointer}
+.upload-area{border:2px dashed #ccc;border-radius:10px;padding:40px;text-align:center;cursor:pointer;transition:all .2s}
+.upload-area:hover,.upload-area.dragover{border-color:#1a73e8;background:#f0f7ff}
+.upload-area .icon{font-size:48px;margin-bottom:12px}
+.upload-area p{font-size:14px;color:#666;margin-bottom:8px}
+.upload-area .hint{font-size:12px;color:#999}
+.upload-result{margin-top:16px;padding:14px;background:#f0f7ff;border-radius:8px;font-size:13px;display:none}
+.upload-result.show{display:block}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:6px;font-size:13px;z-index:3000;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.success{background:#4caf50}
+.toast.error{background:#f44336}
+.empty{text-align:center;padding:40px;color:#999;font-size:14px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>云曲线喷涂数据平台 - 管理后台</h1>
+  <div class="actions">
+    <span class="user-info" id="userInfo"></span>
+    <button class="btn btn-secondary btn-sm" onclick="location.href='/dashboard'">📊 数据看板</button>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">退出登录</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="stats-row" id="statsRow"></div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('users')">👥 用户管理</div>
+    <div class="tab" onclick="switchTab('upload')">📤 数据导入</div>
+  </div>
+
+  <!-- 用户管理 -->
+  <div class="tab-content active" id="tab-users">
+    <div class="card">
+      <h3>
+        用户列表
+        <button class="btn btn-blue btn-sm" onclick="openUserModal()">+ 新建用户</button>
+      </h3>
+      <div style="overflow-x:auto">
+        <table id="usersTable">
+          <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>权限摘要</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 数据导入 -->
+  <div class="tab-content" id="tab-upload">
+    <div class="card">
+      <h3>上传 Excel 数据</h3>
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📁</div>
+        <p>点击或拖拽 Excel 文件到此处上传</p>
+        <p class="hint">支持 .xlsx / .xls 格式，最大 50MB。导入模式：追加合并去重。</p>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none" onchange="handleFileSelect(event)">
+      </div>
+      <div class="upload-result" id="uploadResult"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 用户编辑弹窗 -->
+<div class="modal-overlay" id="userModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="userModalTitle">新建用户</h3>
+      <button class="modal-close" onclick="closeUserModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editUserId">
+      <div class="form-group">
+        <label>用户名</label>
+        <input type="text" id="editUsername" placeholder="登录用户名">
+      </div>
+      <div class="form-group">
+        <label>密码 <span style="color:#999;font-weight:normal">（编辑时留空表示不修改）</span></label>
+        <input type="password" id="editPassword" placeholder="至少6位">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>角色</label>
+          <select id="editRole">
+            <option value="sub">子账号</option>
+            <option value="admin">管理员</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>状态</label>
+          <select id="editActive">
+            <option value="true">启用</option>
+            <option value="false">禁用</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeUserModal()">取消</button>
+      <button class="btn btn-blue" onclick="saveUser()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 权限管理弹窗 -->
+<div class="modal-overlay" id="permModal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <h3 id="permModalTitle">权限管理</h3>
+      <button class="modal-close" onclick="closePermModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="permUserId">
+      <div style="margin-bottom:14px">
+        <button class="btn btn-blue btn-sm" onclick="addPermRow()">+ 添加权限规则</button>
+        <span style="font-size:12px;color:#999;margin-left:8px">多条规则取并集；客户留空=全部客户，列留空=全部列</span>
+      </div>
+      <div id="permList"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closePermModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TOKEN=localStorage.getItem('spray_token');
+const ALL_COLUMNS=[
+  {key:'board_count',label:'板件数量'},
+  {key:'duration_min',label:'时长(min)'},
+  {key:'clear_paint_g',label:'清漆用量'},
+  {key:'color_paint_g',label:'色漆用量'},
+  {key:'pearl_paint_g',label:'珍珠用量'},
+  {key:'primer_paint_g',label:'底漆用量'},
+  {key:'brand',label:'品牌'},
+  {key:'car_series',label:'车系'},
+  {key:'car_model',label:'车型'},
+  {key:'parts',label:'部件'},
+  {key:'device',label:'设备'}
+];
+let customerList=[];
+
+// 认证检查
+if(!TOKEN){location.href='/login';}
+fetch('/api/me',{headers:{'Authorization':'Bearer '+TOKEN}})
+  .then(r=>{if(!r.ok)throw new Error();return r.json();})
+  .then(d=>{
+    if(d.user.role!=='admin'){location.href='/dashboard';return;}
+    document.getElementById('userInfo').textContent='👤 '+d.user.username;
+    loadStats();loadUsers();loadCustomers();
+  })
+  .catch(()=>{localStorage.clear();location.href='/login';});
+
+function logout(){localStorage.clear();location.href='/login';}
+function showToast(msg,type=''){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+type;setTimeout(()=>t.classList.remove('show'),2500);}
+function api(url,opts={}){return fetch(url,{...opts,headers:{'Authorization':'Bearer '+TOKEN,...(opts.headers||{})}});}
+
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['users','upload'][i]===name));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+async function loadStats(){
+  try{
+    const [cRes,oRes]=await Promise.all([api('/api/customers'),api('/api/overview')]);
+    const customers=await cRes.json();
+    const overview=await oRes.json();
+    const totalRecords=overview.reduce((s,c)=>s+parseInt(c.furnace||0),0);
+    const totalBoards=overview.reduce((s,c)=>s+parseInt(c.board_count||0),0);
+    document.getElementById('statsRow').innerHTML=`
+      <div class="stat-card"><div class="label">客户总数</div><div class="value">${customers.length}</div></div>
+      <div class="stat-card"><div class="label">作业记录总数</div><div class="value green">${totalRecords}</div></div>
+      <div class="stat-card"><div class="label">板件总数</div><div class="value orange">${totalBoards}</div></div>
+    `;
+  }catch(e){console.error(e);}
+}
+
+async function loadUsers(){
+  try{
+    const res=await api('/api/users');
+    const users=await res.json();
+    const tbody=document.getElementById('usersBody');
+    tbody.innerHTML=users.map(u=>{
+      const perms=Array.isArray(u.permissions)?u.permissions:[];
+      const permSummary=u.role==='admin'?'<span class="badge badge-admin">全部权限</span>':
+        (perms.length===0?'<span style="color:#999">无权限</span>':
+          perms.map(p=>`<span class="perm-tag">${p.customer_name||'全部客户'}${p.can_import?' · 导入':''}${p.can_export?' · 导出':''}</span>`).join(''));
+      return `<tr>
+        <td>${u.id}</td>
+        <td><strong>${u.username}</strong></td>
+        <td><span class="badge ${u.role==='admin'?'badge-admin':'badge-sub'}">${u.role==='admin'?'管理员':'子账号'}</span></td>
+        <td><span class="badge ${u.is_active?'badge-active':'badge-inactive'}">${u.is_active?'启用':'禁用'}</span></td>
+        <td style="max-width:300px">${permSummary}</td>
+        <td style="font-size:12px;color:#888">${new Date(u.created_at).toLocaleDateString('zh-CN')}</td>
+        <td>
+          ${u.role!=='admin'?`<button class="btn btn-outline btn-sm" onclick="editUser(${u.id},'${u.username}','${u.role}',${u.is_active})">编辑</button>
+          <button class="btn btn-outline btn-sm" onclick="openPermModal(${u.id},'${u.username}')">权限</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id},'${u.username}')">删除</button>`:'<span style="color:#ccc">—</span>'}
+        </td>
+      </tr>`;
+    }).join('');
+  }catch(e){showToast('加载用户失败','error');}
+}
+
+async function loadCustomers(){
+  try{const res=await api('/api/customers');customerList=await res.json();}catch(e){customerList=[];}
+}
+
+function openUserModal(){
+  document.getElementById('userModalTitle').textContent='新建用户';
+  document.getElementById('editUserId').value='';
+  document.getElementById('editUsername').value='';
+  document.getElementById('editPassword').value='';
+  document.getElementById('editRole').value='sub';
+  document.getElementById('editActive').value='true';
+  document.getElementById('userModal').classList.add('show');
+}
+function editUser(id,username,role,active){
+  document.getElementById('userModalTitle').textContent='编辑用户';
+  document.getElementById('editUserId').value=id;
+  document.getElementById('editUsername').value=username;
+  document.getElementById('editPassword').value='';
+  document.getElementById('editRole').value=role;
+  document.getElementById('editActive').value=active?'true':'false';
+  document.getElementById('userModal').classList.add('show');
+}
+function closeUserModal(){document.getElementById('userModal').classList.remove('show');}
+
+async function saveUser(){
+  const id=document.getElementById('editUserId').value;
+  const username=document.getElementById('editUsername').value.trim();
+  const password=document.getElementById('editPassword').value;
+  const role=document.getElementById('editRole').value;
+  const is_active=document.getElementById('editActive').value==='true';
+  if(!username){showToast('用户名必填','error');return;}
+  if(!id&&!password){showToast('密码必填','error');return;}
+  try{
+    let res;
+    if(id){
+      const body={is_active,role};
+      if(password)body.password=password;
+      res=await api('/api/users/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    }else{
+      res=await api('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password,role})});
+    }
+    if(!res.ok){const d=await res.json();showToast(d.error||'保存失败','error');return;}
+    showToast('保存成功','success');closeUserModal();loadUsers();
+  }catch(e){showToast('保存失败','error');}
+}
+
+async function deleteUser(id,username){
+  if(!confirm(`确认删除用户「${username}」？该操作不可恢复。`))return;
+  try{
+    const res=await api('/api/users/'+id,{method:'DELETE'});
+    if(!res.ok){const d=await res.json();showToast(d.error||'删除失败','error');return;}
+    showToast('已删除','success');loadUsers();
+  }catch(e){showToast('删除失败','error');}
+}
+
+// 权限管理
+let permRows=[];
+function openPermModal(userId,username){
+  document.getElementById('permUserId').value=userId;
+  document.getElementById('permModalTitle').textContent=`权限管理 - ${username}`;
+  permRows=[];
+  document.getElementById('permList').innerHTML='';
+  // 加载现有权限
+  api('/api/users/'+userId+'/permissions').then(r=>r.json()).then(perms=>{
+    perms.forEach(p=>addPermRow(p));
+  });
+  document.getElementById('permModal').classList.add('show');
+}
+function closePermModal(){document.getElementById('permModal').classList.remove('show');}
+
+function addPermRow(existing={}){
+  const rowId=Date.now()+Math.random();
+  permRows.push({id:rowId,dbId:existing.id||null,...existing});
+  renderPermRows();
+}
+
+function renderPermRows(){
+  const container=document.getElementById('permList');
+  container.innerHTML=permRows.map((p,idx)=>{
+    const customerOptions=['<option value="">全部客户</option>',...customerList.map(c=>`<option value="${c}" ${p.customer_name===c?'selected':''}>${c}</option>`)].join('');
+    const colOptions=ALL_COLUMNS.map(c=>{
+      const checked=(p.allowed_columns&&p.allowed_columns.includes(c.key))?'checked':'';
+      return `<label class="checkbox-item"><input type="checkbox" value="${c.key}" ${checked} onchange="updatePermCols(${idx})">${c.label}</label>`;
+    }).join('');
+    return `<div style="border:1px solid #e8e8e8;border-radius:8px;padding:14px;margin-bottom:12px;position:relative">
+      <div style="position:absolute;top:8px;right:10px"><button class="btn btn-danger btn-sm" onclick="removePermRow(${idx})">删除</button></div>
+      <div style="font-weight:600;margin-bottom:10px;color:#1a73e8">规则 ${idx+1}</div>
+      <div class="form-row">
+        <div class="form-group"><label>可查看客户</label><select id="perm_cust_${idx}">${customerOptions}</select></div>
+        <div class="form-group"><label>日期范围</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="date" id="perm_ds_${idx}" value="${p.date_start?p.date_start.slice(0,10):''}" style="flex:1">
+            <span style="color:#999">~</span>
+            <input type="date" id="perm_de_${idx}" value="${p.date_end?p.date_end.slice(0,10):''}" style="flex:1">
+          </div>
+        </div>
+      </div>
+      <div class="form-group"><label>可查看数据列（留空=全部）</label><div class="checkbox-group" id="perm_cols_${idx}">${colOptions}</div></div>
+      <div style="display:flex;gap:16px;margin-top:8px">
+        <label class="checkbox-item"><input type="checkbox" id="perm_import_${idx}" ${p.can_import?'checked':''}> 允许导入Excel</label>
+        <label class="checkbox-item"><input type="checkbox" id="perm_export_${idx}" ${p.can_export?'checked':''}> 允许导出数据</label>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updatePermCols(idx){
+  const container=document.getElementById('perm_cols_'+idx);
+  const checked=[...container.querySelectorAll('input:checked')].map(i=>i.value);
+  permRows[idx].allowed_columns=checked;
+}
+
+function removePermRow(idx){
+  const row=permRows[idx];
+  if(row.dbId){
+    if(!confirm('确认删除这条权限规则？'))return;
+    api('/api/permissions/'+row.dbId,{method:'DELETE'}).then(()=>{showToast('已删除','success');});
+  }
+  permRows.splice(idx,1);
+  renderPermRows();
+}
+
+// 保存权限（自动保存每条）
+document.addEventListener('change',async function(e){
+  if(e.target.closest('#permList')&&e.target.tagName==='SELECT'){
+    const idx=e.target.id.match(/perm_cust_(\d+)/)?.[1];
+    if(idx!==undefined)savePermRow(parseInt(idx));
+  }
+  if(e.target.closest('#permList')&&e.target.type==='date'){
+    const m=e.target.id.match(/perm_d[se]_(\d+)/);
+    if(m)savePermRow(parseInt(m[1]));
+  }
+  if(e.target.closest('#permList')&&e.target.type==='checkbox'&&(e.target.id.startsWith('perm_import_')||e.target.id.startsWith('perm_export_'))){
+    const m=e.target.id.match(/perm_(import|export)_(\d+)/);
+    if(m)savePermRow(parseInt(m[2]));
+  }
+});
+
+async function savePermRow(idx){
+  const row=permRows[idx];
+  const customer_name=document.getElementById('perm_cust_'+idx).value;
+  const date_start=document.getElementById('perm_ds_'+idx).value||null;
+  const date_end=document.getElementById('perm_de_'+idx).value||null;
+  const can_import=document.getElementById('perm_import_'+idx).checked;
+  const can_export=document.getElementById('perm_export_'+idx).checked;
+  const colContainer=document.getElementById('perm_cols_'+idx);
+  const allowed_columns=[...colContainer.querySelectorAll('input:checked')].map(i=>i.value);
+  const userId=document.getElementById('permUserId').value;
+  const body={customer_name:customer_name||null,date_start,date_end,allowed_columns,can_import,can_export};
+  try{
+    let res;
+    if(row.dbId){
+      res=await api('/api/permissions/'+row.dbId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    }else{
+      res=await api('/api/users/'+userId+'/permissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(res.ok){const d=await res.json();row.dbId=d.id;}
+    }
+    if(res.ok)showToast('权限已保存','success');
+  }catch(e){showToast('保存失败','error');}
+}
+
+// 文件上传
+const uploadArea=document.getElementById('uploadArea');
+uploadArea.addEventListener('dragover',e=>{e.preventDefault();uploadArea.classList.add('dragover');});
+uploadArea.addEventListener('dragleave',()=>uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop',e=>{e.preventDefault();uploadArea.classList.remove('dragover');if(e.dataTransfer.files[0])uploadFile(e.dataTransfer.files[0]);});
+
+function handleFileSelect(e){if(e.target.files[0])uploadFile(e.target.files[0]);}
+
+async function uploadFile(file){
+  if(!file.name.match(/\.(xlsx|xls)$/i)){showToast('仅支持 Excel 文件','error');return;}
+  const formData=new FormData();
+  formData.append('file',file);
+  const resultEl=document.getElementById('uploadResult');
+  resultEl.className='upload-result show';
+  resultEl.innerHTML='⏳ 正在上传并解析...';
+  try{
+    const res=await fetch('/api/upload',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:formData});
+    const data=await res.json();
+    if(!res.ok){resultEl.innerHTML='❌ '+data.error;return;}
+    resultEl.innerHTML=`✅ <strong>${data.message}</strong><br>
+      新增：${data.inserted} 条 | 更新：${data.updated} 条 | 涉及客户：${data.customers.length} 个<br>
+      当前总记录数：${data.totalRecords}`;
+    showToast('导入成功','success');
+    loadStats();
+  }catch(e){resultEl.innerHTML='❌ 上传失败：'+e.message;}
+}
+</script>
+</body>
+</html>

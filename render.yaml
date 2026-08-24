@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: spray-data-platform
+    runtime: node
+    buildCommand: npm install
+    startCommand: node --dns-result-order=ipv4first server.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: PORT
+        value: 3000

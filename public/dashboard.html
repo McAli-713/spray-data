@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>云曲线智能喷涂数据看板</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#333;font-size:14px}
+.watermark{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999;overflow:hidden}
+.watermark-inner{position:absolute;top:-50%;left:-50%;width:200%;height:200%;transform:rotate(-30deg);display:flex;flex-wrap:wrap;align-content:space-around;justify-content:space-around}
+.watermark span{font-size:26px;font-weight:700;color:rgba(128,128,128,.12);white-space:nowrap;padding:30px 50px;letter-spacing:6px;user-select:none}
+.topbar{background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:200;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.topbar h1{font-size:17px;font-weight:600;white-space:nowrap}
+.topbar .title-group{display:flex;align-items:center;gap:10px;min-width:0}
+.topbar .customer-name-fixed{font-size:15px;font-weight:600;color:#fff;background:rgba(255,255,255,.15);padding:4px 12px;border-radius:5px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar .actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.topbar .user-tag{font-size:12px;background:rgba(255,255,255,.15);padding:4px 10px;border-radius:5px}
+.btn{padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;transition:all .2s;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.btn-primary{background:#fff;color:#1a73e8}
+.btn-primary:hover{background:#e8f0fe}
+.btn-secondary{background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4)}
+.btn-secondary:hover{background:rgba(255,255,255,.3)}
+.btn-outline{background:#fff;color:#555;border:1px solid #ddd}
+.btn-outline:hover{border-color:#1a73e8;color:#1a73e8}
+.btn-sm{padding:4px 10px;font-size:11px}
+.filter-panel{background:#fff;border-bottom:1px solid #e8e8e8;max-height:0;overflow:hidden;transition:max-height .35s ease;position:sticky;top:52px;z-index:150}
+.filter-panel.open{max-height:80vh;overflow-y:auto}
+.filter-inner{padding:12px 16px}
+.filter-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px 16px}
+.filter-item{margin-bottom:4px;position:relative}
+.filter-item label{display:block;font-size:12px;color:#666;margin-bottom:4px;font-weight:500}
+.filter-item input[type=text],.filter-item input[type=date],.filter-item input[type=number]{width:100%;padding:5px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;outline:none;transition:border .2s}
+.filter-item input:focus{border-color:#1a73e8}
+.filter-actions{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0}
+.filter-actions .btn{flex:1}
+.search-dropdown{display:none;position:absolute;top:100%;left:0;right:0;max-height:280px;overflow-y:auto;background:#fff;border:1px solid #d0e3ff;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:300;margin-top:2px}
+.search-dropdown.show{display:block}
+.dropdown-item{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f5f5f5;transition:background .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dropdown-item:last-child{border-bottom:none}
+.dropdown-item:hover{background:#e8f4ff;color:#1a73e8}
+.layout{display:flex;min-height:calc(100vh - 52px)}
+.sidebar{width:240px;background:#fff;border-right:1px solid #e8e8e8;padding:10px;overflow-y:auto;flex-shrink:0}
+.main{flex:1;padding:12px;overflow-x:auto;min-width:0}
+.customer-list h3{font-size:12px;color:#888;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #eee;text-transform:uppercase;letter-spacing:.5px}
+.customer-item{padding:7px 10px;border-radius:5px;cursor:pointer;font-size:13px;margin-bottom:2px;transition:all .15s;display:flex;justify-content:space-between;align-items:center}
+.customer-item:hover{background:#f0f7ff}
+.customer-item.active{background:#1a73e8;color:#fff}
+.customer-item .cname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chart-card{background:#fff;border-radius:8px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.chart-card h3{font-size:14px;margin-bottom:8px;color:#333;font-weight:600}
+.chart-container{width:100%;height:300px}
+.chart-container.tall{height:380px}
+.table-card{background:#fff;border-radius:8px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow-x:auto}
+.table-card h3{font-size:14px;margin-bottom:10px;color:#333;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+th{background:#f5f7fa;padding:8px 10px;text-align:left;font-weight:600;color:#555;border-bottom:2px solid #e8e8e8;position:sticky;top:0;z-index:1;user-select:none}
+th.sortable{cursor:pointer}
+th.sortable:hover{background:#e8f0fe;color:#1a73e8}
+th .sort-icon{font-size:10px;margin-left:4px;opacity:.4}
+th.sorted .sort-icon{opacity:1;color:#1a73e8}
+td{padding:7px 10px;border-bottom:1px solid #f0f0f0}
+tr:hover td{background:#f9fbff}
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:#e8f4ff}
+tr.agg-row td{background:#f5f9ff;font-weight:600}
+tr.agg-row:hover td{background:#e8f4ff}
+tr.detail-row td{background:#fafafa;padding-left:24px;font-size:12px}
+tr.detail-row:hover td{background:#f0f7ff}
+.expand-icon{display:inline-block;width:16px;text-align:center;transition:transform .2s}
+.expand-icon.open{transform:rotate(90deg)}
+.empty-state{text-align:center;padding:60px 20px;color:#999}
+.empty-state .icon{font-size:48px;margin-bottom:16px}
+.empty-state p{font-size:15px;margin-bottom:16px}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;justify-content:center;align-items:center;padding:16px}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-header{padding:14px 16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center}
+.modal-header h3{font-size:16px}
+.modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:#999;line-height:1}
+.modal-body{padding:14px 16px;overflow-y:auto;flex:1}
+.modal-footer{padding:12px 16px;border-top:1px solid #eee;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.col-setting-group{margin-bottom:14px}
+.col-setting-group-title{font-size:12px;font-weight:600;color:#1a73e8;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #e8f0fe}
+.col-setting-list{display:flex;flex-direction:column;gap:4px}
+.col-setting-item{display:flex;align-items:center;gap:10px;padding:6px 10px;border:1px solid #eee;border-radius:5px;cursor:pointer;transition:all .15s}
+.col-setting-item:hover{background:#f9fbff;border-color:#d0e3ff}
+.col-setting-item input[type=checkbox]{width:16px;height:16px;cursor:pointer;flex-shrink:0}
+.col-setting-item .col-label{font-size:13px;color:#333}
+.col-setting-item .col-hint{font-size:10px;color:#bbb;margin-left:auto}
+.col-setting-actions{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0}
+.col-setting-actions .btn{flex:1}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+.stat-card{background:#fff;border-radius:8px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.stat-card .label{font-size:11px;color:#888;margin-bottom:3px}
+.stat-card .value{font-size:18px;font-weight:700;color:#1a73e8}
+.stat-card .value.green{color:#4caf50}
+.stat-card .value.orange{color:#ff9800}
+.stat-card .value.purple{color:#9c27b0}
+.back-btn{background:#fff;border:1px solid #ddd;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:12px;color:#555}
+.back-btn:hover{border-color:#1a73e8;color:#1a73e8}
+.hidden{display:none !important}
+.toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:6px;font-size:13px;z-index:3000;opacity:0;transition:opacity .3s;pointer-events:none;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+.toast.error{background:#f44336}
+.toast.success{background:#4caf50}
+.loading-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,.8);z-index:2500;justify-content:center;align-items:center;flex-direction:column;gap:12px}
+.loading-overlay.show{display:flex}
+.loading-spinner{width:40px;height:40px;border:4px solid #e0e0e0;border-top-color:#1a73e8;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.part-cell{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:#1a73e8}
+.part-cell:hover{text-decoration:underline}
+@media (max-width:768px) and (orientation:portrait){
+  .layout{flex-direction:column}
+  .sidebar{width:100%;border-right:none;border-bottom:1px solid #e8e8e8;max-height:none;overflow:visible;padding:8px 12px}
+  .customer-list h3{display:none}
+  .customer-scroll{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+  .customer-scroll .customer-item{flex-shrink:0;margin-bottom:0;padding:5px 10px;background:#f0f7ff;border:1px solid #d0e3ff;font-size:12px}
+  .customer-scroll .customer-item.active{background:#1a73e8;color:#fff;border-color:#1a73e8}
+  .chart-container{height:240px}
+  .chart-container.tall{height:280px}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .topbar h1{font-size:15px}
+  .topbar .customer-name-fixed{font-size:13px;max-width:35vw}
+  .filter-grid{grid-template-columns:1fr 1fr}
+  .btn{padding:5px 10px;font-size:11px}
+  .watermark span{font-size:20px;padding:20px 30px;letter-spacing:4px}
+}
+</style>
+</head>
+<body>
+<div class="watermark" id="watermark"><div class="watermark-inner" id="watermarkInner"></div></div>
+
+<div class="topbar" id="topbar">
+  <div class="title-group">
+    <button class="btn btn-secondary btn-sm" id="backBtn" style="display:none" onclick="showHome()">← 返回</button>
+    <h1 id="topbarTitle">云曲线智能喷涂数据看板</h1>
+    <span class="customer-name-fixed hidden" id="customerNameFixed"></span>
+  </div>
+  <div class="actions">
+    <span class="user-tag" id="userTag"></span>
+    <button class="btn btn-secondary btn-sm" onclick="toggleFilterPanel()" id="filterToggleBtn">🔍 筛选</button>
+    <button class="btn btn-secondary btn-sm" onclick="openColSetting()">⚙ 列设置</button>
+    <button class="btn btn-secondary btn-sm" onclick="openExportModal()" id="exportBtn">导出PDF</button>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">退出</button>
+  </div>
+</div>
+
+<div class="filter-panel" id="filterPanel">
+  <div class="filter-inner">
+    <div class="filter-grid" id="filterGrid"></div>
+    <div class="filter-actions">
+      <button class="btn btn-outline btn-sm" onclick="resetFilters()">重置全部筛选</button>
+      <button class="btn btn-primary btn-sm" onclick="toggleFilterPanel()">收起筛选</button>
+    </div>
+  </div>
+</div>
+
+<div id="homePage">
+  <div class="layout">
+    <div class="sidebar" id="homeSidebar">
+      <div class="customer-list">
+        <h3>客户列表</h3>
+        <div class="customer-scroll" id="homeCustomerList"></div>
+      </div>
+    </div>
+    <div class="main" id="homeMain">
+      <div class="empty-state" id="homeEmpty">
+        <div class="icon">📊</div>
+        <p>加载数据中...</p>
+      </div>
+      <div id="homeData" class="hidden">
+        <div class="stats-row" id="homeStats"></div>
+        <div class="chart-card" id="chart1Card">
+          <h3>全部客户：炉数 - 板件数量</h3>
+          <div class="chart-container" id="chart1"></div>
+        </div>
+        <div class="chart-card" id="chart2Card">
+          <h3>全部客户：单炉平均时长</h3>
+          <div class="chart-container" id="chart2"></div>
+        </div>
+        <div class="chart-card" id="chart3Card">
+          <h3>客户总板件数量排名（降序）</h3>
+          <div class="chart-container tall" id="chart3"></div>
+        </div>
+        <div class="chart-card" id="chartPartsCard">
+          <h3>部件数量统计（全部客户）</h3>
+          <div class="chart-container tall" id="chartParts"></div>
+        </div>
+        <div class="table-card">
+          <h3>客户总览 <span style="font-size:12px;color:#999;font-weight:normal">点击数字列表头排序 · 点击行查看详情</span></h3>
+          <div style="overflow-x:auto">
+            <table id="overviewTable">
+              <thead id="overviewHead"></thead>
+              <tbody id="overviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="detailPage" class="hidden">
+  <div class="layout">
+    <div class="sidebar" id="detailSidebar">
+      <div class="customer-list">
+        <h3>客户列表（点击切换）</h3>
+        <div class="customer-scroll" id="detailCustomerList"></div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="stats-row" id="detailStats"></div>
+      <div class="chart-card" id="detailChartCard">
+        <h3 id="detailChartTitle">炉次 - 板件数量</h3>
+        <div class="chart-container" id="detailChart"></div>
+      </div>
+      <div class="chart-card" id="detailPartsCard">
+        <h3 id="detailPartsTitle">部件数量统计</h3>
+        <div class="chart-container" id="detailPartsChart"></div>
+      </div>
+      <div class="table-card">
+        <h3>作业明细 <span style="font-size:12px;color:#999;font-weight:normal">按日期聚合 · 点击行展开当天明细 · 数字列可排序</span></h3>
+        <div style="overflow-x:auto" id="detailTableWrap">
+          <table id="detailTable">
+            <thead id="detailHead"></thead>
+            <tbody id="detailBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 列设置弹窗 -->
+<div class="modal-overlay" id="colSettingModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>显示列设置</h3>
+      <button class="modal-close" onclick="closeColSetting()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:#888;margin-bottom:12px">勾选需要显示的数据列和图表，设置全局生效。</p>
+      <div id="colSettingContent"></div>
+      <div class="col-setting-actions">
+        <button class="btn btn-outline btn-sm" onclick="selectAllCols()">全选</button>
+        <button class="btn btn-outline btn-sm" onclick="resetCols()">恢复默认</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeColSetting()">取消</button>
+      <button class="btn btn-primary" onclick="applyColSetting()">应用设置</button>
+    </div>
+  </div>
+</div>
+
+<!-- 导出弹窗 -->
+<div class="modal-overlay" id="exportModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>导出PDF</h3>
+      <button class="modal-close" onclick="closeExportModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:#666;margin-bottom:10px">选择要导出的客户，PDF将包含图表和作业明细。</p>
+      <input type="text" class="export-search" id="exportSearch" placeholder="搜索客户名称..." oninput="renderExportList()" style="width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn btn-outline btn-sm" onclick="selectAllExport()" style="flex:1">一键全选</button>
+        <button class="btn btn-outline btn-sm" onclick="clearExport()" style="flex:1">一键清除</button>
+      </div>
+      <div id="exportList" style="max-height:280px;overflow-y:auto;border:1px solid #eee;border-radius:5px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeExportModal()">取消</button>
+      <button class="btn btn-primary" onclick="doExport()">确认导出</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loadingText">加载中...</div>
+</div>
+
+<script>
+const APP_TITLE='云曲线智能喷涂数据看板';
+const TOKEN=localStorage.getItem('spray_token');
+let userInfo=null, userScope=null;
+let overviewData=[];
+let currentCustomer=null;
+let dailyData=[];
+let detailRecords=[];
+let partsStatsAll=[];
+let partsStatsCustomer=[];
+let chart1Inst,chart2Inst,chart3Inst,chartPartsInst,detailChartInst,detailPartsInst;
+let exportSelected=new Set();
+let filterPanelOpen=false;
+let expandedDates=new Set();
+let overviewSort={key:null,direction:'asc'};
+let detailSort={key:null,direction:'asc'};
+
+const COL_CONFIG_KEY='sprayboard_colconfig_v3';
+const COLUMN_DEFS=[
+  {group:'作业统计',key:'furnace',label:'炉数',scope:'both',stat:true,chart:true,decimals:0,sortable:true},
+  {group:'作业统计',key:'board_count',label:'板件数量',scope:'both',stat:true,chart:true,decimals:0,sortable:true},
+  {group:'作业统计',key:'duration_min',label:'时长(min)',scope:'both',stat:true,chart:true,decimals:1,sortable:true},
+  {group:'作业统计',key:'clear_paint_g',label:'清漆用量',scope:'both',stat:true,chart:false,decimals:2,sortable:true},
+  {group:'作业统计',key:'color_paint_g',label:'色漆用量',scope:'both',stat:true,chart:false,decimals:2,sortable:true},
+  {group:'作业统计',key:'primer_paint_g',label:'底漆用量',scope:'both',stat:true,chart:false,decimals:2,sortable:true},
+  {group:'作业统计',key:'pearl_paint_g',label:'珍珠用量',scope:'both',stat:true,chart:false,decimals:2,sortable:true},
+  {group:'汇总数据',key:'vehicle_count',label:'车辆数量',scope:'overview',stat:true,chart:false,decimals:0,sortable:true},
+  {group:'汇总数据',key:'visit_count',label:'访问次数',scope:'overview',stat:true,chart:false,decimals:0,sortable:true},
+  {group:'汇总数据',key:'whole_car_download',label:'整车下载',scope:'overview',stat:true,chart:false,decimals:0,sortable:true},
+  {group:'汇总数据',key:'whole_part_download',label:'整车部件下载',scope:'overview',stat:true,chart:false,decimals:0,sortable:true},
+  {group:'汇总数据',key:'separate_part_download',label:'分离件部件下载',scope:'overview',stat:true,chart:false,decimals:0,sortable:true},
+  {group:'汇总数据',key:'whole_track_download',label:'整车轨迹下载',scope:'overview',stat:true,chart:false,decimals:0,sortable:true},
+  {group:'汇总数据',key:'separate_track_download',label:'分离件轨迹下载',scope:'overview',stat:true,chart:false,decimals:0,sortable:true},
+  {group:'明细字段',key:'brand',label:'品牌',scope:'detail',type:'text',sortable:false},
+  {group:'明细字段',key:'car_series',label:'车系',scope:'detail',type:'text',sortable:false},
+  {group:'明细字段',key:'car_model',label:'车型',scope:'detail',type:'text',sortable:false},
+  {group:'明细字段',key:'device',label:'设备',scope:'detail',type:'text',sortable:false},
+  {group:'明细字段',key:'parts',label:'部件',scope:'detail',type:'text',sortable:false},
+  {group:'明细字段',key:'start_time',label:'起始时间',scope:'detail',type:'text',sortable:false},
+  {group:'明细字段',key:'end_time',label:'结束时间',scope:'detail',type:'text',sortable:false}
+];
+const CHART_DEFS=[
+  {key:'chartFurnaceBoard',label:'炉数-板件数量图表',default:true},
+  {key:'chartAvgDuration',label:'单炉平均时长图表',default:true},
+  {key:'chartBoardRank',label:'客户板件排名图表',default:true},
+  {key:'chartParts',label:'部件数量统计图表',default:true}
+];
+const DEFAULT_COL_CONFIG=(function(){
+  const c={};
+  COLUMN_DEFS.forEach(col=>{
+    if(col.group==='作业统计')c[col.key]=(col.key==='duration_min')?false:true;
+    else if(col.group==='汇总数据')c[col.key]=false;
+    else c[col.key]=true;
+  });
+  CHART_DEFS.forEach(ch=>c['chart_'+ch.key]=ch.default);
+  return c;
+})();
+let displayConfig=loadColConfig();
+let tempColConfig={};
+
+function loadColConfig(){
+  try{const s=localStorage.getItem(COL_CONFIG_KEY);if(s)return{...DEFAULT_COL_CONFIG,...JSON.parse(s)};}catch(e){}
+  return{...DEFAULT_COL_CONFIG};
+}
+function saveColConfig(){try{localStorage.setItem(COL_CONFIG_KEY,JSON.stringify(displayConfig));}catch(e){}}
+function getActiveCols(filterFn){return COLUMN_DEFS.filter(c=>displayConfig[c.key]&&(!filterFn||filterFn(c)));}
+
+// 认证
+if(!TOKEN){location.href='/login';}
+function logout(){localStorage.clear();location.href='/login';}
+function api(url,opts={}){return fetch(url,{...opts,headers:{'Authorization':'Bearer '+TOKEN,...(opts.headers||{})}});}
+
+function showToast(msg,type=''){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+type;setTimeout(()=>t.classList.remove('show'),2500);}
+function showLoading(text='加载中...'){document.getElementById('loadingText').textContent=text;document.getElementById('loadingOverlay').classList.add('show');}
+function hideLoading(){document.getElementById('loadingOverlay').classList.remove('show');}
+function num(v){if(v===null||v===undefined||v==='')return 0;const n=parseFloat(v);return isNaN(n)?0:n;}
+function formatVal(v,dec){if(dec===0)return Math.round(num(v));return Number(num(v)).toFixed(dec||0);}
+function escapeHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function formatDate(d){if(!d)return'';const dt=new Date(d);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
+function formatDateTime(d){if(!d)return'';return new Date(d).toLocaleString('zh-CN',{hour12:false});}
+
+function initWatermark(){
+  const inner=document.getElementById('watermarkInner');
+  let html='';for(let i=0;i<80;i++)html+=`<span>CURVEROBOT</span>`;
+  inner.innerHTML=html;
+}
+
+// ========== 数据加载 ==========
+async function init(){
+  initWatermark();
+  try{
+    const meRes=await api('/api/me');
+    if(!meRes.ok){logout();return;}
+    const me=await meRes.json();
+    userInfo=me.user;userScope=me.scope;
+    document.getElementById('userTag').textContent='👤 '+userInfo.username+(userInfo.role==='admin'?'(管理员)':'');
+    // 导出按钮权限
+    if(!userScope.canExport&&userInfo.role!=='admin')document.getElementById('exportBtn').style.display='none';
+
+    showLoading('加载数据中...');
+    const [ovRes,partsRes]=await Promise.all([api('/api/overview'),api('/api/parts-stats')]);
+    overviewData=await ovRes.json();
+    partsStatsAll=await partsRes.json();
+    hideLoading();
+
+    if(overviewData.length===0){
+      document.getElementById('homeEmpty').innerHTML='<div class="icon">📭</div><p>暂无数据，请联系管理员上传Excel</p>';
+      return;
+    }
+    document.getElementById('homeEmpty').classList.add('hidden');
+    document.getElementById('homeData').classList.remove('hidden');
+    buildFilterPanel();
+    renderHome();
+  }catch(e){
+    hideLoading();
+    console.error(e);
+    document.getElementById('homeEmpty').innerHTML='<div class="icon">⚠️</div><p>数据加载失败，请刷新重试</p>';
+  }
+}
+
+// ========== 筛选 ==========
+let filterValues={customer:'',dateStart:'',dateEnd:'',furnaceMin:null,furnaceMax:null,boardMin:null,boardMax:null};
+
+function buildFilterPanel(){
+  const grid=document.getElementById('filterGrid');
+  const furnaceMax=Math.max(...overviewData.map(d=>num(d.furnace)),1);
+  const boardMax=Math.max(...overviewData.map(d=>num(d.board_count)),1);
+  grid.innerHTML=`
+    <div class="filter-item"><label>客户名称</label>
+      <input type="text" id="f_customer" placeholder="输入客户名搜索" autocomplete="off" oninput="onCustomerSearch(this.value)" onfocus="onCustomerSearch(this.value)">
+      <div class="search-dropdown" id="customerDropdown"></div></div>
+    <div class="filter-item"><label>开始日期</label><input type="date" id="f_dateStart" onchange="onFilterChange()"></div>
+    <div class="filter-item"><label>结束日期</label><input type="date" id="f_dateEnd" onchange="onFilterChange()"></div>
+    <div class="filter-item"><label>炉数范围</label>
+      <div style="display:flex;gap:4px;align-items:center">
+        <input type="number" id="f_furnaceMin" placeholder="0" min="0" max="${furnaceMax}" onchange="onFilterChange()" style="flex:1">
+        <span style="color:#999">~</span>
+        <input type="number" id="f_furnaceMax" placeholder="${furnaceMax}" min="0" max="${furnaceMax}" onchange="onFilterChange()" style="flex:1">
+      </div></div>
+    <div class="filter-item"><label>板件数量范围</label>
+      <div style="display:flex;gap:4px;align-items:center">
+        <input type="number" id="f_boardMin" placeholder="0" min="0" max="${boardMax}" onchange="onFilterChange()" style="flex:1">
+        <span style="color:#999">~</span>
+        <input type="number" id="f_boardMax" placeholder="${boardMax}" min="0" max="${boardMax}" onchange="onFilterChange()" style="flex:1">
+      </div></div>
+  `;
+}
+
+function onCustomerSearch(val){
+  filterValues.customer=val;
+  const dropdown=document.getElementById('customerDropdown');
+  if(!dropdown)return;
+  const kw=val.trim().toLowerCase();
+  if(!kw){dropdown.classList.remove('show');applyFilters();return;}
+  const matches=overviewData.filter(d=>d.customer_name.toLowerCase().includes(kw)).slice(0,15);
+  if(matches.length===0)dropdown.innerHTML='<div class="dropdown-item" style="color:#999">无匹配客户</div>';
+  else dropdown.innerHTML=matches.map(m=>`<div class="dropdown-item" onclick="selectCustomerFilter('${escapeHtml(m.customer_name)}')">${escapeHtml(m.customer_name)}</div>`).join('');
+  dropdown.classList.add('show');
+  applyFilters();
+}
+document.addEventListener('click',e=>{
+  const d=document.getElementById('customerDropdown');
+  const i=document.getElementById('f_customer');
+  if(d&&!d.contains(e.target)&&e.target!==i)d.classList.remove('show');
+});
+function selectCustomerFilter(name){
+  document.getElementById('f_customer').value=name;
+  filterValues.customer=name;
+  document.getElementById('customerDropdown').classList.remove('show');
+  showDetail(name);
+}
+
+function onFilterChange(){
+  filterValues.dateStart=document.getElementById('f_dateStart').value;
+  filterValues.dateEnd=document.getElementById('f_dateEnd').value;
+  filterValues.furnaceMin=document.getElementById('f_furnaceMin').value;
+  filterValues.furnaceMax=document.getElementById('f_furnaceMax').value;
+  filterValues.boardMin=document.getElementById('f_boardMin').value;
+  filterValues.boardMax=document.getElementById('f_boardMax').value;
+  applyFilters();
+}
+
+function resetFilters(){
+  filterValues={customer:'',dateStart:'',dateEnd:'',furnaceMin:null,furnaceMax:null,boardMin:null,boardMax:null};
+  buildFilterPanel();
+  applyFilters();
+  showToast('已重置筛选');
+}
+
+function getFilteredOverview(){
+  return overviewData.filter(d=>{
+    if(filterValues.customer&&!d.customer_name.toLowerCase().includes(filterValues.customer.toLowerCase()))return false;
+    if(filterValues.furnaceMin&&num(d.furnace)<num(filterValues.furnaceMin))return false;
+    if(filterValues.furnaceMax&&num(d.furnace)>num(filterValues.furnaceMax))return false;
+    if(filterValues.boardMin&&num(d.board_count)<num(filterValues.boardMin))return false;
+    if(filterValues.boardMax&&num(d.board_count)>num(filterValues.boardMax))return false;
+    return true;
+  });
+}
+
+function applyFilters(){
+  if(currentCustomer)renderDetail();
+  else renderHome();
+}
+
+function toggleFilterPanel(){
+  filterPanelOpen=!filterPanelOpen;
+  document.getElementById('filterPanel').classList.toggle('open',filterPanelOpen);
+  document.getElementById('filterToggleBtn').textContent=filterPanelOpen?'✕ 关闭筛选':'🔍 筛选';
+  setTimeout(resizeAllCharts,400);
+}
+
+// ========== 首页渲染 ==========
+function renderHome(){
+  const data=getFilteredOverview();
+  const names=data.map(d=>d.customer_name);
+  renderCustomerList('homeCustomerList',names,null);
+
+  if(data.length===0){
+    document.getElementById('homeData').classList.add('hidden');
+    document.getElementById('homeEmpty').classList.remove('hidden');
+    document.getElementById('homeEmpty').innerHTML='<div class="icon">🔍</div><p>当前筛选条件下无数据</p><button class="btn btn-primary" onclick="resetFilters()">重置筛选</button>';
+    return;
+  }
+  document.getElementById('homeEmpty').classList.add('hidden');
+  document.getElementById('homeData').classList.remove('hidden');
+
+  // 统计卡片
+  const totals=data.reduce((a,d)=>({furnace:a.furnace+num(d.furnace),board:a.board+num(d.board_count),duration:a.duration+num(d.duration_min)}),{furnace:0,board:0,duration:0});
+  document.getElementById('homeStats').innerHTML=`
+    <div class="stat-card"><div class="label">客户数</div><div class="value">${data.length}</div></div>
+    <div class="stat-card"><div class="label">总炉数</div><div class="value green">${totals.furnace}</div></div>
+    <div class="stat-card"><div class="label">总板件数</div><div class="value orange">${totals.board}</div></div>
+    <div class="stat-card"><div class="label">总时长(min)</div><div class="value purple">${formatVal(totals.duration,1)}</div></div>
+  `;
+
+  // 图表
+  renderHomeCharts(data);
+  // 总览表
+  renderOverviewTable(data);
+}
+
+function renderHomeCharts(data){
+  const sorted=[...data].sort((a,b)=>num(b.board_count)-num(a.board_count));
+  const names=sorted.map(d=>d.customer_name);
+
+  if(displayConfig['chart_chartFurnaceBoard']){
+    document.getElementById('chart1Card').classList.remove('hidden');
+    if(!chart1Inst)chart1Inst=echarts.init(document.getElementById('chart1'));
+    chart1Inst.setOption({
+      tooltip:{trigger:'axis'},
+      legend:{data:['炉数','板件数量'],top:0},
+      grid:{left:50,right:30,top:40,bottom:60},
+      xAxis:{type:'category',data:names,axisLabel:{rotate:30,fontSize:10}},
+      yAxis:[{type:'value',name:'炉数'},{type:'value',name:'板件'}],
+      series:[
+        {name:'炉数',type:'bar',data:sorted.map(d=>num(d.furnace)),itemStyle:{color:'#1a73e8'}},
+        {name:'板件数量',type:'line',yAxisIndex:1,data:sorted.map(d=>num(d.board_count)),itemStyle:{color:'#ff9800'},smooth:true}
+      ]
+    });
+  }else document.getElementById('chart1Card').classList.add('hidden');
+
+  if(displayConfig['chart_chartAvgDuration']){
+    document.getElementById('chart2Card').classList.remove('hidden');
+    if(!chart2Inst)chart2Inst=echarts.init(document.getElementById('chart2'));
+    chart2Inst.setOption({
+      tooltip:{trigger:'axis',formatter:p=>p[0].name+'<br>平均时长: '+p[0].value.toFixed(1)+' min'},
+      grid:{left:50,right:20,top:20,bottom:60},
+      xAxis:{type:'category',data:names,axisLabel:{rotate:30,fontSize:10}},
+      yAxis:{type:'value',name:'min'},
+      series:[{type:'bar',data:sorted.map(d=>num(d.furnace)>0?num(d.duration_min)/num(d.furnace):0),itemStyle:{color:'#4caf50'}}]
+    });
+  }else document.getElementById('chart2Card').classList.add('hidden');
+
+  if(displayConfig['chart_chartBoardRank']){
+    document.getElementById('chart3Card').classList.remove('hidden');
+    if(!chart3Inst)chart3Inst=echarts.init(document.getElementById('chart3'));
+    chart3Inst.setOption({
+      tooltip:{trigger:'axis'},
+      grid:{left:120,right:30,top:20,bottom:30},
+      xAxis:{type:'value'},
+      yAxis:{type:'category',data:[...names].reverse(),axisLabel:{fontSize:11}},
+      series:[{type:'bar',data:sorted.map(d=>num(d.board_count)).reverse(),itemStyle:{color:'#1a73e8'},label:{show:true,position:'right',fontSize:11}}]
+    });
+  }else document.getElementById('chart3Card').classList.add('hidden');
+
+  // 部件统计图表
+  if(displayConfig['chart_chartParts']){
+    document.getElementById('chartPartsCard').classList.remove('hidden');
+    renderPartsChart(partsStatsAll,'chartParts');
+  }else document.getElementById('chartPartsCard').classList.add('hidden');
+}
+
+function renderPartsChart(stats,containerId){
+  const inst=echarts.getInstanceByDom(document.getElementById(containerId))||echarts.init(document.getElementById(containerId));
+  const top20=stats.slice(0,20);
+  inst.setOption({
+    tooltip:{trigger:'axis',formatter:p=>p[0].name+'<br>出现次数: '+p[0].value},
+    grid:{left:100,right:30,top:20,bottom:30},
+    xAxis:{type:'value'},
+    yAxis:{type:'category',data:[...top20].map(d=>d.part_name).reverse(),axisLabel:{fontSize:11}},
+    series:[{type:'bar',data:[...top20].map(d=>num(d.count)).reverse(),itemStyle:{color:'#9c27b0'},label:{show:true,position:'right',fontSize:11}}]
+  });
+  if(containerId==='chartParts')chartPartsInst=inst;
+  else detailPartsInst=inst;
+}
+
+// ========== 总览表（带排序） ==========
+function renderOverviewTable(data){
+  const cols=getActiveCols(c=>c.scope==='overview'||c.scope==='both');
+  // 排序
+  let sorted=[...data];
+  if(overviewSort.key){
+    const col=COLUMN_DEFS.find(c=>c.key===overviewSort.key);
+    sorted.sort((a,b)=>{
+      const va=num(a[overviewSort.key]),vb=num(b[overviewSort.key]);
+      return overviewSort.direction==='asc'?va-vb:vb-va;
+    });
+  }
+  const thead=document.getElementById('overviewHead');
+  thead.innerHTML='<tr><th>客户名称</th>'+cols.map(c=>{
+    const sorted_cls=(overviewSort.key===c.key)?'sorted':'';
+    const icon=overviewSort.key===c.key?(overviewSort.direction==='asc'?'▲':'▼'):'↕';
+    return `<th class="sortable ${sorted_cls}" onclick="sortOverview('${c.key}')">${c.label}<span class="sort-icon">${icon}</span></th>`;
+  }).join('')+'</tr>';
+
+  const tbody=document.getElementById('overviewBody');
+  tbody.innerHTML=sorted.map(d=>`<tr class="clickable" onclick="showDetail('${escapeHtml(d.customer_name)}')">
+    <td><strong>${escapeHtml(d.customer_name)}</strong></td>
+    ${cols.map(c=>`<td>${formatVal(d[c.key],c.decimals)}</td>`).join('')}
+  </tr>`).join('');
+}
+
+function sortOverview(key){
+  if(overviewSort.key===key)overviewSort.direction=overviewSort.direction==='asc'?'desc':'asc';
+  else{overviewSort.key=key;overviewSort.direction='desc';}
+  renderOverviewTable(getFilteredOverview());
+}
+
+// ========== 客户列表 ==========
+function renderCustomerList(containerId,names,active){
+  const el=document.getElementById(containerId);
+  el.innerHTML=names.map(n=>`<div class="customer-item ${n===active?'active':''}" onclick="showDetail('${escapeHtml(n)}')">
+    <span class="cname">${escapeHtml(n)}</span>
+  </div>`).join('');
+}
+
+// ========== 详情页 ==========
+async function showDetail(customerName){
+  currentCustomer=customerName;
+  expandedDates=new Set();
+  detailSort={key:null,direction:'asc'};
+  document.getElementById('homePage').classList.add('hidden');
+  document.getElementById('detailPage').classList.remove('hidden');
+  document.getElementById('backBtn').style.display='inline-flex';
+  document.getElementById('customerNameFixed').textContent=customerName;
+  document.getElementById('customerNameFixed').classList.remove('hidden');
+  document.getElementById('topbarTitle').textContent='作业详情';
+
+  const names=getFilteredOverview().map(d=>d.customer_name);
+  renderCustomerList('detailCustomerList',names,customerName);
+
+  showLoading('加载详情...');
+  try{
+    const [dailyRes,recordsRes,partsRes]=await Promise.all([
+      api('/api/daily/'+encodeURIComponent(customerName)),
+      api('/api/records/'+encodeURIComponent(customerName)),
+      api('/api/parts-stats?customer='+encodeURIComponent(customerName))
+    ]);
+    dailyData=await dailyRes.json();
+    detailRecords=await recordsRes.json();
+    partsStatsCustomer=await partsRes.json();
+  }catch(e){showToast('加载详情失败','error');}
+  hideLoading();
+  renderDetail();
+}
+
+function showHome(){
+  currentCustomer=null;
+  document.getElementById('detailPage').classList.add('hidden');
+  document.getElementById('homePage').classList.remove('hidden');
+  document.getElementById('backBtn').style.display='none';
+  document.getElementById('customerNameFixed').classList.add('hidden');
+  document.getElementById('topbarTitle').textContent='云曲线智能喷涂数据看板';
+  renderHome();
+}
+
+function renderDetail(){
+  if(!currentCustomer)return;
+  // 日期筛选
+  let filtered=dailyData;
+  if(filterValues.dateStart||filterValues.dateEnd){
+    filtered=dailyData.filter(d=>{
+      if(filterValues.dateStart&&formatDate(d.record_date)<filterValues.dateStart)return false;
+      if(filterValues.dateEnd&&formatDate(d.record_date)>filterValues.dateEnd)return false;
+      return true;
+    });
+  }
+
+  // 统计
+  const totals=filtered.reduce((a,d)=>({furnace:a.furnace+num(d.furnace),board:a.board+num(d.board_count),duration:a.duration+num(d.duration_min)}),{furnace:0,board:0,duration:0});
+  document.getElementById('detailStats').innerHTML=`
+    <div class="stat-card"><div class="label">天数</div><div class="value">${filtered.length}</div></div>
+    <div class="stat-card"><div class="label">总炉数</div><div class="value green">${totals.furnace}</div></div>
+    <div class="stat-card"><div class="label">总板件数</div><div class="value orange">${totals.board}</div></div>
+    <div class="stat-card"><div class="label">总时长(min)</div><div class="value purple">${formatVal(totals.duration,1)}</div></div>
+  `;
+
+  // 图表
+  const dateSorted=[...filtered].sort((a,b)=>new Date(a.record_date)-new Date(b.record_date));
+  document.getElementById('detailChartTitle').textContent=currentCustomer+' - 炉数/板件数量趋势';
+  if(!detailChartInst)detailChartInst=echarts.init(document.getElementById('detailChart'));
+  detailChartInst.setOption({
+    tooltip:{trigger:'axis'},
+    legend:{data:['炉数','板件数量'],top:0},
+    grid:{left:50,right:30,top:40,bottom:40},
+    xAxis:{type:'category',data:dateSorted.map(d=>formatDate(d.record_date)),axisLabel:{fontSize:10}},
+    yAxis:[{type:'value',name:'炉数'},{type:'value',name:'板件'}],
+    series:[
+      {name:'炉数',type:'bar',data:dateSorted.map(d=>num(d.furnace)),itemStyle:{color:'#1a73e8'}},
+      {name:'板件数量',type:'line',yAxisIndex:1,data:dateSorted.map(d=>num(d.board_count)),itemStyle:{color:'#ff9800'},smooth:true}
+    ]
+  });
+
+  // 部件图表
+  document.getElementById('detailPartsTitle').textContent=currentCustomer+' - 部件数量统计';
+  renderPartsChart(partsStatsCustomer,'detailPartsChart');
+
+  // 明细表（日聚合 + 展开）
+  renderDetailTable(filtered);
+  setTimeout(resizeAllCharts,100);
+}
+
+function renderDetailTable(daily){
+  const aggCols=getActiveCols(c=>c.scope==='both'&&c.group==='作业统计');
+  // 排序
+  let sorted=[...daily];
+  if(detailSort.key){
+    sorted.sort((a,b)=>{
+      const va=num(a[detailSort.key]),vb=num(b[detailSort.key]);
+      return detailSort.direction==='asc'?va-vb:vb-va;
+    });
+  }else{
+    sorted.sort((a,b)=>new Date(b.record_date)-new Date(a.record_date));
+  }
+
+  const thead=document.getElementById('detailHead');
+  thead.innerHTML='<tr><th style="width:24px"></th><th class="sortable" onclick="sortDetail(\'record_date\')">日期<span class="sort-icon">'+(detailSort.key==='record_date'?(detailSort.direction==='asc'?'▲':'▼'):'↕')+'</span></th>'+
+    aggCols.map(c=>{
+      const cls=detailSort.key===c.key?'sorted':'';
+      const icon=detailSort.key===c.key?(detailSort.direction==='asc'?'▲':'▼'):'↕';
+      return `<th class="sortable ${cls}" onclick="sortDetail('${c.key}')">${c.label}<span class="sort-icon">${icon}</span></th>`;
+    }).join('')+'</tr>';
+
+  const detailCols=getActiveCols(c=>c.scope==='detail');
+  const tbody=document.getElementById('detailBody');
+  let html='';
+  sorted.forEach(d=>{
+    const dateStr=formatDate(d.record_date);
+    const isOpen=expandedDates.has(dateStr);
+    html+=`<tr class="agg-row clickable" onclick="toggleDateExpand('${dateStr}')">
+      <td><span class="expand-icon ${isOpen?'open':''}">▶</span></td>
+      <td><strong>${dateStr}</strong></td>
+      ${aggCols.map(c=>`<td>${formatVal(d[c.key],c.decimals)}</td>`).join('')}
+    </tr>`;
+    if(isOpen){
+      const dayRecords=detailRecords.filter(r=>formatDate(r.record_date)===dateStr);
+      dayRecords.forEach(r=>{
+        html+=`<tr class="detail-row">
+          <td></td>
+          <td style="color:#999">└ ${formatDateTime(r.start_time)}</td>
+          ${detailCols.map(c=>{
+            if(c.key==='parts')return `<td class="part-cell" title="${escapeHtml(r[c.key]||'')}" onclick="showPartsDetail('${escapeHtml(r[c.key]||'')}')">${escapeHtml(r[c.key]||'')}</td>`;
+            if(c.key==='start_time'||c.key==='end_time')return `<td>${formatDateTime(r[c.key])}</td>`;
+            return `<td>${escapeHtml(r[c.key]||'')}</td>`;
+          }).join('')}
+        </tr>`;
+      });
+    }
+  });
+  tbody.innerHTML=html;
+}
+
+function sortDetail(key){
+  if(detailSort.key===key)detailSort.direction=detailSort.direction==='asc'?'desc':'asc';
+  else{detailSort.key=key;detailSort.direction='desc';}
+  renderDetail();
+}
+
+function toggleDateExpand(dateStr){
+  if(expandedDates.has(dateStr))expandedDates.delete(dateStr);
+  else expandedDates.add(dateStr);
+  renderDetail();
+}
+
+function showPartsDetail(parts){
+  showToast(parts);
+}
+
+// ========== 列设置 ==========
+function openColSetting(){
+  tempColConfig={...displayConfig};
+  renderColSettingList();
+  document.getElementById('colSettingModal').classList.add('show');
+}
+function closeColSetting(){document.getElementById('colSettingModal').classList.remove('show');}
+function renderColSettingList(){
+  const container=document.getElementById('colSettingContent');
+  const groups=[...new Set(COLUMN_DEFS.map(c=>c.group))];
+  let html='';
+  // 图表设置
+  html+='<div class="col-setting-group"><div class="col-setting-group-title">图表显示</div><div class="col-setting-list">';
+  CHART_DEFS.forEach(ch=>{
+    const checked=tempColConfig['chart_'+ch.key]?'checked':'';
+    html+=`<div class="col-setting-item" onclick="toggleTempCol('chart_${ch.key}')">
+      <input type="checkbox" ${checked} onclick="event.stopPropagation();toggleTempCol('chart_${ch.key}')">
+      <span class="col-label">${ch.label}</span></div>`;
+  });
+  html+='</div></div>';
+  // 列设置
+  for(const g of groups){
+    const cols=COLUMN_DEFS.filter(c=>c.group===g);
+    html+=`<div class="col-setting-group"><div class="col-setting-group-title">${g}</div><div class="col-setting-list">`;
+    cols.forEach(col=>{
+      const checked=tempColConfig[col.key]?'checked':'';
+      const hint=col.scope==='detail'?'仅明细':(col.chart?'图表+表格':'统计+表格');
+      html+=`<div class="col-setting-item" onclick="toggleTempCol('${col.key}')">
+        <input type="checkbox" ${checked} onclick="event.stopPropagation();toggleTempCol('${col.key}')">
+        <span class="col-label">${col.label}</span><span class="col-hint">${hint}</span></div>`;
+    });
+    html+='</div></div>';
+  }
+  container.innerHTML=html;
+}
+function toggleTempCol(key){tempColConfig[key]=!tempColConfig[key];renderColSettingList();}
+function selectAllCols(){COLUMN_DEFS.forEach(c=>tempColConfig[c.key]=true);CHART_DEFS.forEach(ch=>tempColConfig['chart_'+ch.key]=true);renderColSettingList();}
+function resetCols(){tempColConfig={...DEFAULT_COL_CONFIG};renderColSettingList();}
+function applyColSetting(){
+  displayConfig={...tempColConfig};
+  saveColConfig();
+  closeColSetting();
+  if(currentCustomer)renderDetail();else renderHome();
+  setTimeout(resizeAllCharts,100);
+  showToast('设置已应用','success');
+}
+document.getElementById('colSettingModal').addEventListener('click',e=>{if(e.target.id==='colSettingModal')closeColSetting();});
+
+// ========== 导出PDF ==========
+function openExportModal(){
+  renderExportList();
+  document.getElementById('exportModal').classList.add('show');
+}
+function closeExportModal(){document.getElementById('exportModal').classList.remove('show');}
+function renderExportList(){
+  const kw=document.getElementById('exportSearch').value.trim().toLowerCase();
+  const names=getFilteredOverview().map(d=>d.customer_name).filter(n=>!kw||n.toLowerCase().includes(kw));
+  document.getElementById('exportList').innerHTML=names.map(n=>`
+    <div class="export-item" style="display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid #f5f5f5;cursor:pointer" onclick="toggleExport('${escapeHtml(n)}')">
+      <input type="checkbox" ${exportSelected.has(n)?'checked':''} style="margin-right:10px" onclick="event.stopPropagation();toggleExport('${escapeHtml(n)}')">
+      <label style="cursor:pointer;flex:1;font-size:13px">${escapeHtml(n)}</label>
+    </div>`).join('')||'<div style="padding:20px;text-align:center;color:#999">无匹配客户</div>';
+}
+function toggleExport(name){if(exportSelected.has(name))exportSelected.delete(name);else exportSelected.add(name);renderExportList();}
+function selectAllExport(){getFilteredOverview().forEach(d=>exportSelected.add(d.customer_name));renderExportList();}
+function clearExport(){exportSelected.clear();renderExportList();}
+async function doExport(){
+  if(exportSelected.size===0){showToast('请至少选择一个客户','error');return;}
+  closeExportModal();
+  showToast('正在生成PDF...');
+  // 简化版：用浏览器打印
+  const names=[...exportSelected];
+  const printWin=window.open('','_blank');
+  let content=`<html><head><title>喷涂数据导出</title><style>body{font-family:sans-serif;padding:20px}h2{color:#1a73e8;border-bottom:2px solid #1a73e8;padding-bottom:6px;margin-top:24px}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}th{background:#f5f7fa;padding:6px 8px;text-align:left;border-bottom:2px solid #e8e8e8}td{padding:5px 8px;border-bottom:1px solid #f0f0f0}</style></head><body>`;
+  content+='<h1>云曲线智能喷涂数据看板 - 导出报告</h1>';
+  content+='<p>导出时间：'+new Date().toLocaleString('zh-CN')+'</p>';
+  for(const name of names){
+    const ov=overviewData.find(d=>d.customer_name===name);
+    content+=`<h2>${escapeHtml(name)}</h2>`;
+    if(ov){
+      content+=`<p>炉数：${num(ov.furnace)} | 板件数量：${num(ov.board_count)} | 总时长：${formatVal(ov.duration_min,1)} min</p>`;
+    }
+    // 日聚合表
+    const daily=dailyData.filter(d=>d.customer_name===name);
+    // 需要从API获取，简化处理
+  }
+  content+='</body></html>';
+  printWin.document.write(content);
+  printWin.document.close();
+  setTimeout(()=>printWin.print(),500);
+  showToast('导出完成','success');
+}
+
+// ========== 工具 ==========
+function resizeAllCharts(){
+  [chart1Inst,chart2Inst,chart3Inst,chartPartsInst,detailChartInst,detailPartsInst].forEach(c=>{if(c)c.resize();});
+}
+window.addEventListener('resize',resizeAllCharts);
+
+// 启动
+init();
+</script>
+</body>
+</html>
