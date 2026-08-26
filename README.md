@@ -2,6 +2,15 @@
 
 基于 Node.js + Express + PostgreSQL 的多用户数据管理平台，支持 Excel 数据导入、权限管理、数据看板与可视化分析。
 
+## v7 更新日志
+
+- **上传记录管理**：管理后台新增「上传记录」标签，展示每次上传的文件名、上传人、时间、文件大小、新增/更新条数、涉及客户，支持下载原始 Excel 文件
+- **上传自动刷新**：文件上传成功后自动刷新上传记录列表和统计数据
+- **子账号水印**：子账号登录时页面水印自动加上用户名（如 `CURVEROBOT · zhangsan`），管理员仅显示 `CURVEROBOT`
+- **高清 PDF 导出**：改用 html2canvas + jsPDF 生成 2x 分辨率高清 PDF，自动下载无需手动打印，水印与网页一致
+- **Excel 导出优化**：去掉合并标题行，第一行直接为列名（喷涂时间、设备、部件等）；客户详情页导出时默认只勾选当前客户
+- **Excel 安全调整**：去掉文件打开密码（可直接打开查看），保留工作表保护密码（禁止修改内容，密码 53931526）
+
 ## 功能特性
 
 ### 🔐 用户与权限管理
@@ -217,6 +226,8 @@ npm start
 | PUT | /api/permissions/:pid | 更新权限 | 管理员 |
 | DELETE | /api/permissions/:pid | 删除权限 | 管理员 |
 | POST | /api/upload | 上传 Excel | 有导入权限 |
+| GET | /api/uploads | 上传记录列表 | 管理员 |
+| GET | /api/uploads/:id/download | 下载原始上传文件 | 管理员 |
 | GET | /api/customers | 客户列表 | 登录（按权限过滤） |
 | GET | /api/overview | 客户总览汇总 | 登录（按权限过滤） |
 | GET | /api/records/:customer | 客户作业明细 | 登录（按权限过滤） |

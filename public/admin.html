@@ -102,6 +102,7 @@ tr:hover td{background:#f9fbff}
   <div class="tabs">
     <div class="tab active" onclick="switchTab('users')">👥 用户管理</div>
     <div class="tab" onclick="switchTab('upload')">📤 数据导入</div>
+    <div class="tab" onclick="switchTab('records')">📋 上传记录</div>
   </div>
 
   <!-- 用户管理 -->
@@ -131,6 +132,22 @@ tr:hover td{background:#f9fbff}
         <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none" onchange="handleFileSelect(event)">
       </div>
       <div class="upload-result" id="uploadResult"></div>
+    </div>
+  </div>
+
+  <!-- 上传记录 -->
+  <div class="tab-content" id="tab-records">
+    <div class="card">
+      <h3>
+        上传记录
+        <button class="btn btn-outline btn-sm" onclick="loadUploadRecords()">🔄 刷新</button>
+      </h3>
+      <div style="overflow-x:auto">
+        <table id="uploadRecordsTable">
+          <thead><tr><th>ID</th><th>原始文件名</th><th>上传人</th><th>上传时间</th><th>文件大小</th><th>新增</th><th>更新</th><th>涉及客户</th><th>操作</th></tr></thead>
+          <tbody id="uploadRecordsBody"><tr><td colspan="9" style="text-align:center;color:#999;padding:30px">加载中...</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
@@ -249,7 +266,7 @@ Auth.fetchAuth('/api/me')
   .then(d=>{
     if(d.user.role!=='admin'){location.href='/dashboard';return;}
     document.getElementById('userInfo').textContent='👤 '+d.user.username+'（30分钟无操作自动登出）';
-    loadStats();loadUsers();loadCustomers();
+    loadStats();loadUsers();loadCustomers();loadUploadRecords();
   })
   .catch(()=>{Auth.clearAuth();location.href='/login';});
 
@@ -258,9 +275,11 @@ function showToast(msg,type=''){const t=document.getElementById('toast');t.textC
 function api(url,opts={}){return Auth.fetchAuth(url,opts);}
 
 function switchTab(name){
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['users','upload'][i]===name));
+  const tabs=['users','upload','records'];
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===name));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
+  if(name==='records') loadUploadRecords();
 }
 
 async function loadStats(){
@@ -450,6 +469,49 @@ async function savePermission(){
     showToast('权限已保存','success'); loadUsers();
   }catch(e){showToast('保存失败','error');}
 }
+// ========== 上传记录 ==========
+async function loadUploadRecords(){
+  try{
+    const res=await api('/api/uploads');
+    if(!res.ok){const d=await res.json().catch(()=>({}));showToast(d.error||'加载失败','error');return;}
+    const records=await res.json();
+    const tbody=document.getElementById('uploadRecordsBody');
+    if(!records||records.length===0){
+      tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;padding:30px">暂无上传记录</td></tr>';
+      return;
+    }
+    tbody.innerHTML=records.map(r=>{
+      const sizeKB=(r.file_size/1024).toFixed(1);
+      const sizeStr=r.file_size>1024*1024?(r.file_size/1024/1024).toFixed(2)+' MB':sizeKB+' KB';
+      const customers=Array.isArray(r.customers)?r.customers:[];
+      const custStr=customers.length>0?customers.slice(0,3).join('、')+(customers.length>3?' 等'+customers.length+'个':''):'-';
+      return `<tr>
+        <td>${r.id}</td>
+        <td><strong title="${escapeHtml(r.original_filename)}">${escapeHtml(r.original_filename)}</strong></td>
+        <td>${escapeHtml(r.uploader_username||'-')}</td>
+        <td style="font-size:12px">${new Date(r.uploaded_at).toLocaleString('zh-CN',{hour12:false})}</td>
+        <td>${sizeStr}</td>
+        <td style="color:#4caf50;font-weight:600">${r.inserted_count}</td>
+        <td style="color:#ff9800;font-weight:600">${r.updated_count}</td>
+        <td style="font-size:12px;max-width:200px" title="${escapeHtml(customers.join('、'))}">${escapeHtml(custStr)}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="downloadUpload(${r.id})">⬇ 下载</button></td>
+      </tr>`;
+    }).join('');
+  }catch(e){showToast('加载上传记录失败','error');}
+}
+function downloadUpload(id){
+  // 用带token的方式下载
+  Auth.fetchAuth('/api/uploads/'+id+'/download').then(res=>{
+    if(!res.ok)throw new Error('下载失败');
+    return res.blob();
+  }).then(blob=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='upload_'+id+'.xlsx';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }).catch(e=>{showToast('下载失败：'+e.message,'error');});
+}
 // 文件上传
 const uploadArea=document.getElementById('uploadArea');
 uploadArea.addEventListener('dragover',e=>{e.preventDefault();uploadArea.classList.add('dragover');});
@@ -494,6 +556,7 @@ async function uploadFile(file){
         当前总记录数：${data.totalRecords}`;
       showToast('导入成功','success');
       loadStats();
+      loadUploadRecords();
       return;
     }catch(e){
       if(attempt===0){

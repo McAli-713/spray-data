@@ -116,6 +116,30 @@ async function initDB() {
   }
 }
 
+// ========== 上传记录表（在 initDB 之后创建，避免事务内依赖） ==========
+async function ensureUploadRecordsTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS upload_records (
+        id SERIAL PRIMARY KEY,
+        filename VARCHAR(255) NOT NULL,
+        original_filename VARCHAR(255) NOT NULL,
+        file_path VARCHAR(500) NOT NULL,
+        file_size INTEGER DEFAULT 0,
+        uploader_id INTEGER REFERENCES users(id),
+        uploader_username VARCHAR(100),
+        inserted_count INTEGER DEFAULT 0,
+        updated_count INTEGER DEFAULT 0,
+        customers JSONB DEFAULT '[]',
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('上传记录表初始化完成');
+  } catch (e) {
+    console.error('上传记录表创建失败:', e.message);
+  }
+}
+
 async function ensureAdminUser() {
   const adminUser = process.env.ADMIN_USERNAME || 'admin';
   const adminPass = process.env.ADMIN_PASSWORD;
@@ -524,8 +548,33 @@ async function saveUserColConfig(userId, config) {
   return result.rowCount > 0;
 }
 
+// ========== 上传记录相关 ==========
+async function createUploadRecord({ filename, originalFilename, filePath, fileSize, uploaderId, uploaderUsername, insertedCount, updatedCount, customers }) {
+  const result = await pool.query(
+    `INSERT INTO upload_records
+       (filename, original_filename, file_path, file_size, uploader_id, uploader_username, inserted_count, updated_count, customers)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     RETURNING *`,
+    [filename, originalFilename, filePath, fileSize || 0, uploaderId || null, uploaderUsername || '', insertedCount || 0, updatedCount || 0, JSON.stringify(customers || [])]
+  );
+  return result.rows[0];
+}
+
+async function listUploadRecords(limit = 100) {
+  const result = await pool.query(
+    'SELECT * FROM upload_records ORDER BY uploaded_at DESC LIMIT $1',
+    [limit]
+  );
+  return result.rows;
+}
+
+async function getUploadRecordById(id) {
+  const result = await pool.query('SELECT * FROM upload_records WHERE id = $1', [id]);
+  return result.rows[0] || null;
+}
+
 module.exports = {
-  pool, initDB,
+  pool, initDB, ensureUploadRecordsTable,
   // 用户
   getUserByUsername, getUserById, verifyPassword, listUsers,
   createUser, updateUser, deleteUser,
@@ -536,5 +585,7 @@ module.exports = {
   // 记录
   upsertRecords, upsertCustomerStats, listCustomers, getCustomerOverview,
   getCustomerRecords, getCustomerDailyAggregate, getPartsStats,
-  deleteCustomerRecords, getTotalRecords
+  deleteCustomerRecords, getTotalRecords,
+  // 上传记录
+  createUploadRecord, listUploadRecords, getUploadRecordById
 };
