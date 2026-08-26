@@ -159,6 +159,27 @@ tr.detail-row:hover td{background:#f0f7ff}
 .pagination button.active{background:#1a73e8;color:#fff;border-color:#1a73e8}
 .pagination button:disabled{opacity:.4;cursor:not-allowed}
 .pagination .page-info{font-size:12px;color:#999;margin:0 8px}
+/* 筛选条件标签（S1） */
+.filter-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0}
+.filter-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:#e8f4ff;border:1px solid #d0e3ff;border-radius:12px;font-size:11px;color:#1a73e8}
+.filter-tag .tag-close{cursor:pointer;font-weight:bold;opacity:.6;margin-left:2px}
+.filter-tag .tag-close:hover{opacity:1}
+.filter-tag.tag-customer{background:#fff3e0;border-color:#ffe0b2;color:#e65100}
+.filter-tag.tag-date{background:#f3e5f5;border-color:#e1bee7;color:#7b1fa2}
+.filter-tag.tag-range{background:#e8f5e9;border-color:#c8e6c9;color:#2e7d32}
+/* 已选客户标签（S2） */
+.selected-customers-bar{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-height:60px;overflow-y:auto}
+.selected-customer-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:#1a73e8;color:#fff;border-radius:10px;font-size:11px}
+.selected-customer-chip .chip-close{cursor:pointer;font-weight:bold;opacity:.7}
+.selected-customer-chip .chip-close:hover{opacity:1}
+/* 筛选结果计数（S6） */
+.filter-count{font-size:12px;color:#666;margin-top:8px;padding:6px 10px;background:#f9f9f9;border-radius:4px}
+.filter-count strong{color:#1a73e8}
+/* 首页快捷日期按钮（S5） */
+.home-quick-dates{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px}
+/* 环比详情提示（S3） */
+.trend-detail{font-size:10px;color:#999;margin-top:1px;cursor:help}
+.trend-empty{font-size:10px;color:#bbb;margin-top:1px;font-style:italic}
 .part-cell:hover{text-decoration:underline}
 @media (max-width:768px) and (orientation:portrait){
   .layout{flex-direction:column}
@@ -202,8 +223,15 @@ tr.detail-row:hover td{background:#f0f7ff}
 <div class="filter-panel" id="filterPanel">
   <div class="filter-inner">
     <div class="filter-grid" id="filterGrid"></div>
+    <!-- 已选客户标签（S2） -->
+    <div class="selected-customers-bar" id="selectedCustomersBar" style="display:none"></div>
+    <!-- 筛选条件标签（S1） -->
+    <div class="filter-tags" id="filterTags" style="display:none"></div>
+    <!-- 筛选结果计数（S6） -->
+    <div class="filter-count" id="filterCount" style="display:none"></div>
     <div class="filter-actions">
       <button class="btn btn-outline btn-sm" onclick="resetFilters()">重置全部筛选</button>
+      <button class="btn btn-outline btn-sm" onclick="exportCurrentFilter()" id="exportFilterBtn">📥 导出当前筛选结果</button>
       <button class="btn btn-primary btn-sm" onclick="toggleFilterPanel()">收起筛选</button>
     </div>
   </div>
@@ -225,6 +253,12 @@ tr.detail-row:hover td{background:#f0f7ff}
       </div>
       <div id="homeData" class="hidden">
         <div id="homeDateRange" style="background:#fff;border-radius:8px;padding:8px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);font-size:13px;color:#555"><span style="color:#1a73e8;font-weight:600">📅 数据范围：</span><span id="homeDateRangeText">加载中...</span></div>
+      <div class="home-quick-dates" id="homeQuickDates">
+        <button class="date-quick-btn" onclick="setHomeQuickDate('week')">本周</button>
+        <button class="date-quick-btn" onclick="setHomeQuickDate('month')">本月</button>
+        <button class="date-quick-btn" onclick="setHomeQuickDate('quarter')">本季度</button>
+        <button class="date-quick-btn" onclick="setHomeQuickDate('all')">全部</button>
+      </div>
       <div class="stats-row" id="homeStats"></div>
         <div class="chart-card" id="chart1Card">
           <h3>全部客户：炉数 - 板件数量</h3>
@@ -741,6 +775,8 @@ function resetFilters(){
   filterValues={customer:'',dateStart:'',dateEnd:'',furnaceMin:null,furnaceMax:null,boardMin:null,boardMax:null};
   selectedFilterCustomers.clear();
   trendCache={key:'',data:null};
+  // 清除首页快捷日期按钮active状态
+  document.querySelectorAll('#homeQuickDates .date-quick-btn').forEach(b=>b.classList.remove('active'));
   buildFilterPanel();
   applyFilters();
   showToast('已重置筛选');
@@ -766,12 +802,124 @@ function applyFilters(){
   }else{
     renderHome();
   }
+  updateFilterUI();
+}
+
+// ========== 筛选UI更新（S1/S2/S6） ==========
+function updateFilterUI(){
+  renderSelectedCustomersBar();
+  renderFilterTags();
+  updateFilterCount();
+}
+// S2: 已选客户标签
+function renderSelectedCustomersBar(){
+  const bar=document.getElementById('selectedCustomersBar');
+  if(!bar)return;
+  if(selectedFilterCustomers.size===0){bar.style.display='none';bar.innerHTML='';return;}
+  bar.style.display='flex';
+  bar.innerHTML=[...selectedFilterCustomers].map(name=>
+    `<span class="selected-customer-chip">${escapeHtml(name)}<span class="chip-close" onclick="removeFilterCustomer('${escapeHtml(name)}')">×</span></span>`
+  ).join('');
+}
+function removeFilterCustomer(name){
+  selectedFilterCustomers.delete(name);
+  onCustomerSearch(document.getElementById('f_customer').value);
+  if(!currentCustomer)applyFilters();
+}
+// S1: 筛选条件标签
+function renderFilterTags(){
+  const el=document.getElementById('filterTags');
+  if(!el)return;
+  const tags=[];
+  // 日期筛选
+  if(filterValues.dateStart||filterValues.dateEnd){
+    const ds=filterValues.dateStart||'不限',de=filterValues.dateEnd||'不限';
+    tags.push({type:'date',label:`📅 ${ds} ~ ${de}`,onclick:'clearDateFilter()'});
+  }
+  // 炉数范围
+  if(filterValues.furnaceMin||filterValues.furnaceMax){
+    const mn=filterValues.furnaceMin||'0',mx=filterValues.furnaceMax||'不限';
+    tags.push({type:'range',label:`🔥 炉数 ${mn}~${mx}`,onclick:'clearFurnaceFilter()'});
+  }
+  // 板件范围
+  if(filterValues.boardMin||filterValues.boardMax){
+    const mn=filterValues.boardMin||'0',mx=filterValues.boardMax||'不限';
+    tags.push({type:'range',label:`📦 板件 ${mn}~${mx}`,onclick:'clearBoardFilter()'});
+  }
+  // 关键词搜索（非多选模式时）
+  if(filterValues.customer&&selectedFilterCustomers.size===0){
+    tags.push({type:'customer',label:`🔍 关键词：${filterValues.customer}`,onclick:'clearCustomerKeyword()'});
+  }
+  if(tags.length===0){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='flex';
+  el.innerHTML=tags.map(t=>
+    `<span class="filter-tag tag-${t.type}">${t.label}<span class="tag-close" onclick="${t.onclick}">×</span></span>`
+  ).join('');
+}
+function clearDateFilter(){filterValues.dateStart='';filterValues.dateEnd='';const ds=document.getElementById('f_dateStart');const de=document.getElementById('f_dateEnd');if(ds)ds.value='';if(de)de.value='';applyFilters();}
+function clearFurnaceFilter(){filterValues.furnaceMin='';filterValues.furnaceMax='';const a=document.getElementById('f_furnaceMin');const b=document.getElementById('f_furnaceMax');if(a)a.value='';if(b)b.value='';applyFilters();}
+function clearBoardFilter(){filterValues.boardMin='';filterValues.boardMax='';const a=document.getElementById('f_boardMin');const b=document.getElementById('f_boardMax');if(a)a.value='';if(b)b.value='';applyFilters();}
+function clearCustomerKeyword(){filterValues.customer='';const i=document.getElementById('f_customer');if(i)i.value='';applyFilters();}
+// S6: 筛选结果计数
+function updateFilterCount(){
+  const el=document.getElementById('filterCount');
+  if(!el)return;
+  const hasFilter=selectedFilterCustomers.size>0||filterValues.customer||filterValues.dateStart||filterValues.dateEnd||filterValues.furnaceMin||filterValues.furnaceMax||filterValues.boardMin||filterValues.boardMax;
+  if(!hasFilter){el.style.display='none';return;}
+  const filtered=getFilteredOverview();
+  const totalRecords=filtered.reduce((s,d)=>s+num(d.furnace),0);
+  el.style.display='block';
+  el.innerHTML=`当前筛选：<strong>${filtered.length}</strong> 个客户 / <strong>${totalRecords}</strong> 条炉次记录`;
+}
+// S7: 导出当前筛选结果
+function exportCurrentFilter(){
+  toggleFilterPanel();
+  openExportModal();
+}
+
+// ========== S5: 首页快捷日期筛选 ==========
+function setHomeQuickDate(type){
+  const today=new Date();
+  let start='',end='';
+  if(type==='week'){
+    // 本周一到今天
+    const day=today.getDay()||7;
+    const monday=new Date(today);monday.setDate(today.getDate()-day+1);
+    start=formatDate(monday);end=formatDate(today);
+  }else if(type==='month'){
+    start=formatDate(new Date(today.getFullYear(),today.getMonth(),1));
+    end=formatDate(today);
+  }else if(type==='quarter'){
+    const q=Math.floor(today.getMonth()/3);
+    start=formatDate(new Date(today.getFullYear(),q*3,1));
+    end=formatDate(today);
+  }
+  // 更新筛选面板日期输入
+  const ds=document.getElementById('f_dateStart');
+  const de=document.getElementById('f_dateEnd');
+  if(ds)ds.value=start;if(de)de.value=end;
+  filterValues.dateStart=start;filterValues.dateEnd=end;
+  // 更新快捷按钮active状态
+  document.querySelectorAll('#homeQuickDates .date-quick-btn').forEach(b=>b.classList.remove('active'));
+  if(type!=='all'){
+    const btn=[...document.querySelectorAll('#homeQuickDates .date-quick-btn')].find(b=>b.textContent.includes(type==='week'?'本周':type==='month'?'本月':'本季度'));
+    if(btn)btn.classList.add('active');
+  }
+  applyFilters();
 }
 
 function toggleFilterPanel(){
   filterPanelOpen=!filterPanelOpen;
   document.getElementById('filterPanel').classList.toggle('open',filterPanelOpen);
   document.getElementById('filterToggleBtn').textContent=filterPanelOpen?'✕ 关闭筛选':'🔍 筛选';
+  if(filterPanelOpen){
+    // S4: 打开筛选面板时聚焦客户搜索框并展开列表
+    setTimeout(()=>{
+      const input=document.getElementById('f_customer');
+      if(input){input.focus();onCustomerSearch(input.value);}
+    },350);
+    updateFilterUI();
+  }
   setTimeout(resizeAllCharts,400);
 }
 
@@ -1659,17 +1807,12 @@ function initColumnResize(tableId){
 }
 let trendCache={key:'',data:null};
 async function loadTrendStats(data){
-  // 确定当前周期
-  let start,end;
-  if(filterValues.dateStart&&filterValues.dateEnd){
-    start=filterValues.dateStart;end=filterValues.dateEnd;
-  }else{
-    // 从数据中取最小最大日期
-    const dates=data.map(d=>new Date(d.first_time)).filter(t=>!isNaN(t));
-    if(dates.length===0)return;
-    start=formatDate(new Date(Math.min(...dates)));
-    end=formatDate(new Date(Math.max(...dates)));
+  // S3: 未设置日期筛选时，提示用户设置日期范围以查看有意义的环比
+  if(!filterValues.dateStart||!filterValues.dateEnd){
+    updateStatsWithTrend(null);
+    return;
   }
+  const start=filterValues.dateStart,end=filterValues.dateEnd;
   const cacheKey=start+'_'+end+'_'+data.length;
   if(trendCache.key===cacheKey&&trendCache.data){
     updateStatsWithTrend(trendCache.data);
@@ -1682,7 +1825,6 @@ async function loadTrendStats(data){
   const prevStart=new Date(prevEnd);prevStart.setDate(prevStart.getDate()-days+1);
   const prevStartStr=formatDate(prevStart),prevEndStr=formatDate(prevEnd);
 
-  // 并行获取所有客户的日聚合数据
   try{
     const names=data.map(d=>d.customer_name);
     const results=await Promise.all(names.map(n=>api('/api/daily/'+encodeURIComponent(n)).then(r=>r.ok?r.json():[]).catch(()=>[])));
@@ -1699,23 +1841,42 @@ async function loadTrendStats(data){
       board:{cur:curBoard,prev:prevBoard,pct:prevBoard>0?((curBoard-prevBoard)/prevBoard*100):null},
       duration:{cur:curDur,prev:prevDur,pct:prevDur>0?((curDur-prevDur)/prevDur*100):null},
       period:`${start} ~ ${end}`,
-      prevPeriod:`${prevStartStr} ~ ${prevEndStr}`
+      prevPeriod:`${prevStartStr} ~ ${prevEndStr}`,
+      customerCount:names.length
     };
     trendCache={key:cacheKey,data:trendData};
     updateStatsWithTrend(trendData);
-  }catch(e){console.warn('趋势统计加载失败:',e);}
+  }catch(e){console.warn('趋势统计加载失败:',e);updateStatsWithTrend(null);}
 }
 function updateStatsWithTrend(trend){
   const statsEl=document.getElementById('homeStats');
   if(!statsEl)return;
   const cards=statsEl.querySelectorAll('.stat-card');
   if(cards.length<4)return;
-  // 炉数（第2张）、板件（第3张）、时长（第4张）
+  // 移除旧的趋势元素
+  cards.forEach(c=>{c.querySelectorAll('.trend,.trend-detail,.trend-empty').forEach(e=>e.remove());});
+  if(!trend){
+    [1,2,3].forEach(i=>{
+      if(cards[i]){
+        const hint=document.createElement('div');
+        hint.className='trend-empty';
+        hint.textContent='设置日期范围查看环比';
+        cards[i].appendChild(hint);
+      }
+    });
+    return;
+  }
   const trendHtml=(t)=>{
-    if(t.pct===null)return '<div class="trend flat">环比 —</div>';
-    const cls=t.pct>=0?'up':'down';
-    const arrow=t.pct>=0?'↑':'↓';
-    return `<div class="trend ${cls}" title="上一周期：${t.prev}">环比 ${arrow} ${Math.abs(t.pct).toFixed(1)}%</div>`;
+    let pctHtml;
+    if(t.pct===null){
+      pctHtml='<span class="trend flat">环比 —（上期无数据）</span>';
+    }else{
+      const cls=t.pct>=0?'up':'down';
+      const arrow=t.pct>=0?'↑':'↓';
+      pctHtml=`<span class="trend ${cls}">环比 ${arrow} ${Math.abs(t.pct).toFixed(1)}%</span>`;
+    }
+    const detailHtml=`<div class="trend-detail" title="当前周期：${trend.period}（${t.cur}）&#10;对比周期：${trend.prevPeriod}（${t.prev}）&#10;统计客户：${trend.customerCount}个">当前 ${t.cur} · 上期 ${t.prev}</div>`;
+    return pctHtml+detailHtml;
   };
   if(cards[1])cards[1].innerHTML+=trendHtml(trend.furnace);
   if(cards[2])cards[2].innerHTML+=trendHtml(trend.board);
