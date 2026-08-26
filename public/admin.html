@@ -103,6 +103,7 @@ tr:hover td{background:#f9fbff}
     <div class="tab active" onclick="switchTab('users')">👥 用户管理</div>
     <div class="tab" onclick="switchTab('upload')">📤 数据导入</div>
     <div class="tab" onclick="switchTab('records')">📋 上传记录</div>
+    <div class="tab" onclick="switchTab('exports')">📥 导出记录</div>
   </div>
 
   <!-- 用户管理 -->
@@ -146,6 +147,22 @@ tr:hover td{background:#f9fbff}
         <table id="uploadRecordsTable">
           <thead><tr><th>ID</th><th>原始文件名</th><th>上传人</th><th>上传时间</th><th>文件大小</th><th>新增</th><th>更新</th><th>涉及客户</th><th>操作</th></tr></thead>
           <tbody id="uploadRecordsBody"><tr><td colspan="9" style="text-align:center;color:#999;padding:30px">加载中...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导出记录 -->
+  <div class="tab-content" id="tab-exports">
+    <div class="card">
+      <h3>
+        导出记录（所有用户）
+        <button class="btn btn-outline btn-sm" onclick="loadExportRecords()">🔄 刷新</button>
+      </h3>
+      <div style="overflow-x:auto">
+        <table id="exportRecordsTable">
+          <thead><tr><th>ID</th><th>导出人</th><th>角色</th><th>类型</th><th>客户数</th><th>导出客户</th><th>导出时间</th></tr></thead>
+          <tbody id="exportRecordsBody"><tr><td colspan="7" style="text-align:center;color:#999;padding:30px">加载中...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -275,11 +292,12 @@ function showToast(msg,type=''){const t=document.getElementById('toast');t.textC
 function api(url,opts={}){return Auth.fetchAuth(url,opts);}
 
 function switchTab(name){
-  const tabs=['users','upload','records'];
+  const tabs=['users','upload','records','exports'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===name));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   if(name==='records') loadUploadRecords();
+  if(name==='exports') loadExportRecords();
 }
 
 async function loadStats(){
@@ -511,6 +529,32 @@ function downloadUpload(id){
     a.click();
     URL.revokeObjectURL(a.href);
   }).catch(e=>{showToast('下载失败：'+e.message,'error');});
+}
+// ========== 导出记录 ==========
+async function loadExportRecords(){
+  try{
+    const res=await api('/api/export-log');
+    if(!res.ok){const d=await res.json().catch(()=>({}));showToast(d.error||'加载失败','error');return;}
+    const records=await res.json();
+    const tbody=document.getElementById('exportRecordsBody');
+    if(!records||records.length===0){
+      tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;padding:30px">暂无导出记录</td></tr>';
+      return;
+    }
+    tbody.innerHTML=records.map(r=>{
+      const customers=Array.isArray(r.customers)?r.customers:[];
+      const custStr=customers.length>0?customers.slice(0,3).join('、')+(customers.length>3?' 等'+customers.length+'个':''):'-';
+      return `<tr>
+        <td>${r.id}</td>
+        <td><strong>${escapeHtml(r.username||'-')}</strong></td>
+        <td><span class="badge ${r.role==='admin'?'badge-admin':'badge-sub'}">${r.role==='admin'?'管理员':'子账号'}</span></td>
+        <td><span class="badge ${r.type==='PDF'?'badge-admin':'badge-sub'}">${escapeHtml(r.type||'-')}</span></td>
+        <td style="font-weight:600;color:#1a73e8">${r.customer_count||0}</td>
+        <td style="font-size:12px;max-width:250px" title="${escapeHtml(customers.join('、'))}">${escapeHtml(custStr)}</td>
+        <td style="font-size:12px">${new Date(r.exported_at).toLocaleString('zh-CN',{hour12:false})}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){showToast('加载导出记录失败','error');}
 }
 // 文件上传
 const uploadArea=document.getElementById('uploadArea');

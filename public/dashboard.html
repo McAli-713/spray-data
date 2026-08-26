@@ -38,7 +38,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .filter-item input:focus{border-color:#1a73e8}
 .filter-actions{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0}
 .filter-actions .btn{flex:1}
-.search-dropdown{display:none;position:absolute;top:100%;left:0;right:0;max-height:280px;overflow-y:auto;background:#fff;border:1px solid #d0e3ff;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:300;margin-top:2px}
+.search-dropdown{display:none;position:fixed;max-height:280px;overflow-y:auto;background:#fff;border:1px solid #d0e3ff;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:3000;margin-top:2px}
 .search-dropdown.show{display:block}
 .dropdown-item{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f5f5f5;transition:background .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dropdown-item:last-child{border-bottom:none}
@@ -58,13 +58,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .chart-container.tall{height:var(--chart-height-tall,380px);min-width:600px}
 .table-card{background:#fff;border-radius:8px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow-x:auto}
 .table-card h3{font-size:14px;margin-bottom:10px;color:#333;font-weight:600;display:flex;justify-content:space-between;align-items:center}
-table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
-th{background:#f5f7fa;padding:8px 10px;text-align:left;font-weight:600;color:#555;border-bottom:2px solid #e8e8e8;position:sticky;top:0;z-index:1;user-select:none}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f5f7fa;padding:8px 10px;text-align:left;font-weight:600;color:#555;border-bottom:2px solid #e8e8e8;position:sticky;top:0;z-index:1;user-select:none;white-space:nowrap}
 th.sortable{cursor:pointer}
 th.sortable:hover{background:#e8f0fe;color:#1a73e8}
 th .sort-icon{font-size:10px;margin-left:4px;opacity:.4}
 th.sorted .sort-icon{opacity:1;color:#1a73e8}
-td{padding:7px 10px;border-bottom:1px solid #f0f0f0}
+td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top;word-break:break-word;white-space:normal;line-height:1.5}
+td.num-cell{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+td.date-cell{white-space:nowrap}
 tr:hover td{background:#f9fbff}
 tr.clickable{cursor:pointer}
 tr.clickable:hover td{background:#e8f4ff}
@@ -113,7 +115,7 @@ tr.detail-row:hover td{background:#f0f7ff}
 .loading-overlay.show{display:flex}
 .loading-spinner{width:40px;height:40px;border:4px solid #e0e0e0;border-top-color:#1a73e8;border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.part-cell{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:#1a73e8}
+.part-cell{max-width:200px;cursor:pointer;color:#1a73e8;line-height:1.5}
 .part-cell:hover{text-decoration:underline}
 @media (max-width:768px) and (orientation:portrait){
   .layout{flex-direction:column}
@@ -533,14 +535,21 @@ function buildFilterPanel(){
 function onCustomerSearch(val){
   filterValues.customer=val;
   const dropdown=document.getElementById('customerDropdown');
-  if(!dropdown)return;
+  const input=document.getElementById('f_customer');
+  if(!dropdown||!input)return;
   const kw=val.trim().toLowerCase();
-  if(!kw){dropdown.classList.remove('show');applyFilters();return;}
+  if(!kw){dropdown.classList.remove('show');if(!currentCustomer)applyFilters();return;}
   const matches=overviewData.filter(d=>d.customer_name.toLowerCase().includes(kw)).slice(0,15);
   if(matches.length===0)dropdown.innerHTML='<div class="dropdown-item" style="color:#999">无匹配客户</div>';
   else dropdown.innerHTML=matches.map(m=>`<div class="dropdown-item" onclick="selectCustomerFilter('${escapeHtml(m.customer_name)}')">${escapeHtml(m.customer_name)}</div>`).join('');
+  // fixed定位：基于输入框位置计算
+  const rect=input.getBoundingClientRect();
+  dropdown.style.left=rect.left+'px';
+  dropdown.style.top=(rect.bottom+2)+'px';
+  dropdown.style.width=rect.width+'px';
   dropdown.classList.add('show');
-  applyFilters();
+  // 详情页输入时不自动切换客户，仅显示下拉列表；首页才实时筛选
+  if(!currentCustomer)applyFilters();
 }
 document.addEventListener('click',e=>{
   const d=document.getElementById('customerDropdown');
@@ -586,12 +595,6 @@ function applyFilters(){
   if(currentCustomer){
     renderDetail();
   }else{
-    const filtered=getFilteredOverview();
-    // 筛选后只剩一个客户时直接显示详表，跳过总表
-    if(filtered.length===1){
-      showDetail(filtered[0].customer_name);
-      return;
-    }
     renderHome();
   }
 }
@@ -1022,6 +1025,7 @@ async function doExcelExport(){
     a.download=`云曲线数据导出_${new Date().toISOString().slice(0,10)}.xlsx`;
     a.click();
     URL.revokeObjectURL(a.href);
+    logExport('Excel',customers);
     showToast('Excel导出成功（已锁定，禁止修改）','success');
   }catch(e){
     showToast('导出失败：'+e.message,'error');
@@ -1029,6 +1033,13 @@ async function doExcelExport(){
     hideLoading();
   }
 }
+// ========== 导出记录日志 ==========
+function logExport(type,customers){
+  try{
+    api('/api/export-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,customers})}).catch(()=>{});
+  }catch(e){}
+}
+
 // ========== 导出PDF ==========
 function openExportModal(){
   exportSelected=new Set();
@@ -1200,6 +1211,7 @@ async function doExport(){
   }),{furnace:0,board:0,duration:0});
   content+=`<div style="background:#f5f9ff;border:1px solid #d0e3ff;border-radius:6px;padding:10px;margin-bottom:12px;">
     <h3 style="font-size:13px;color:#1a73e8;margin-bottom:6px;">📊 汇总数据（共 ${names.length} 个客户）</h3>
+    <div style="font-size:11px;color:#555;margin-bottom:6px;line-height:1.6;word-break:break-all"><strong>导出客户：</strong>${names.map(n=>escapeHtml(n)).join('、')}</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
       <div style="background:#fff;padding:5px 6px;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">客户数</div><div style="font-size:16px;font-weight:bold;color:#1a73e8;">${names.length}</div></div>
       <div style="background:#fff;padding:5px 6px;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">总炉数</div><div style="font-size:16px;font-weight:bold;color:#1a73e8;">${allTotal.furnace}</div></div>
@@ -1252,7 +1264,7 @@ async function doExport(){
     content+=`<div style="font-size:11px;font-weight:bold;color:#333;margin:5px 0 2px 0;">日聚合数据（共 ${cust.daily.length} 天）</div>`;
     if(cust.daily.length>0){
       const sorted=[...cust.daily].sort((a,b)=>new Date(a.record_date)-new Date(b.record_date));
-      content+=`<table style="width:100%;border-collapse:collapse;font-size:9.5px;table-layout:fixed;"><thead><tr>
+      content+=`<table style="width:100%;border-collapse:collapse;font-size:9.5px;table-layout:fixed;word-wrap:break-word;word-break:break-all;"><thead><tr>
         <th style="width:12%;background:#f5f7fa;padding:3px;text-align:left;border-bottom:1.5px solid #e8e8e8;">日期</th>
         <th style="width:9%;background:#f5f7fa;padding:3px;text-align:left;border-bottom:1.5px solid #e8e8e8;">炉数</th>
         <th style="width:11%;background:#f5f7fa;padding:3px;text-align:left;border-bottom:1.5px solid #e8e8e8;">板件</th>
@@ -1313,7 +1325,7 @@ async function doExport(){
   // ========== 4. html2canvas 捕获 + jsPDF 多页输出（JPEG压缩控制文件大小） ==========
   try{
     const canvas=await html2canvas(container,{
-      scale:1.5,
+      scale:2.5,
       useCORS:true,
       backgroundColor:'#ffffff',
       logging:false,
@@ -1327,7 +1339,7 @@ async function doExport(){
     const pageHeight=297;
     const imgWidth=pageWidth;
     const imgHeight=canvas.height*imgWidth/canvas.width;
-    const imgData=canvas.toDataURL('image/jpeg',0.72);
+    const imgData=canvas.toDataURL('image/jpeg',0.85);
     let heightLeft=imgHeight;
     let position=0;
 
@@ -1343,6 +1355,7 @@ async function doExport(){
 
     const filename=`喷涂数据报告_${new Date().toISOString().slice(0,10)}.pdf`;
     pdf.save(filename);
+    logExport('PDF',names);
     showToast('PDF已生成并下载','success');
   }catch(e){
     hideLoading();

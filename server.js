@@ -809,6 +809,51 @@ app.post('/api/export/batch', authRequired, async (req, res) => {
     serverError(res, err, '批量导出失败');
   }
 });
+// ========== 导出记录日志（JSON文件存储，管理员可查看所有用户导出记录） ==========
+const EXPORT_LOG_FILE = path.join(__dirname, 'export_logs.json');
+function readExportLogs() {
+  try {
+    if (fs.existsSync(EXPORT_LOG_FILE)) {
+      return JSON.parse(fs.readFileSync(EXPORT_LOG_FILE, 'utf-8'));
+    }
+  } catch(e) { console.warn('读取导出记录失败:', e.message); }
+  return [];
+}
+function writeExportLogs(logs) {
+  try { fs.writeFileSync(EXPORT_LOG_FILE, JSON.stringify(logs, null, 2), 'utf-8'); }
+  catch(e) { console.warn('写入导出记录失败:', e.message); }
+}
+app.post('/api/export-log', authRequired, async (req, res) => {
+  try {
+    const { type, customers } = req.body || {};
+    const logs = readExportLogs();
+    logs.unshift({
+      id: Date.now(),
+      user_id: req.userId,
+      username: req.username,
+      role: req.role,
+      type: type || '未知',
+      customers: Array.isArray(customers) ? customers : [],
+      customer_count: Array.isArray(customers) ? customers.length : 0,
+      exported_at: new Date().toISOString()
+    });
+    // 最多保留500条
+    if (logs.length > 500) logs.length = 500;
+    writeExportLogs(logs);
+    res.json({ success: true });
+  } catch (err) {
+    serverError(res, err, '记录导出日志失败');
+  }
+});
+app.get('/api/export-log', authRequired, adminRequired, async (req, res) => {
+  try {
+    const logs = readExportLogs();
+    res.json(logs);
+  } catch (err) {
+    serverError(res, err, '获取导出记录失败');
+  }
+});
+
 // ========== 用户列配置（关联账号） ==========
 app.get('/api/col-config', authRequired, async (req, res) => {
   try {
