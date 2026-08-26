@@ -116,6 +116,49 @@ tr.detail-row:hover td{background:#f0f7ff}
 .loading-spinner{width:40px;height:40px;border:4px solid #e0e0e0;border-top-color:#1a73e8;border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .part-cell{max-width:200px;cursor:pointer;color:#1a73e8;line-height:1.5}
+/* 浮动按钮组 */
+.floating-actions{position:fixed;right:20px;bottom:30px;display:flex;flex-direction:column;gap:8px;z-index:500;opacity:0;pointer-events:none;transition:opacity .3s}
+.floating-actions.show{opacity:1;pointer-events:auto}
+.fab{width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.2);transition:all .2s;background:#fff;color:#555;position:relative}
+.fab:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.fab.primary{background:#1a73e8;color:#fff}
+.fab.primary:hover{background:#1557b0}
+.fab .fab-tip{position:absolute;right:54px;background:#333;color:#fff;padding:4px 10px;border-radius:4px;font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .2s}
+.fab:hover .fab-tip{opacity:1}
+/* 固定首列表格 */
+.table-fixed-first{position:relative}
+.table-fixed-first th:first-child,.table-fixed-first td:first-child{position:sticky;left:0;z-index:3;background:#fff;box-shadow:2px 0 4px -2px rgba(0,0,0,.1)}
+.table-fixed-first th:first-child{z-index:4;background:#f5f7fa}
+.table-fixed-first tr:hover td:first-child{background:#f9fbff}
+.table-fixed-first tr.agg-row td:first-child{background:#f5f9ff}
+/* 侧边栏搜索 */
+.sidebar-search{margin-bottom:8px;position:relative}
+.sidebar-search input{width:100%;padding:6px 10px 6px 28px;border:1px solid #ddd;border-radius:5px;font-size:12px;outline:none}
+.sidebar-search input:focus{border-color:#1a73e8}
+.sidebar-search::before{content:'🔍';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;opacity:.5}
+/* 日期快捷按钮 */
+.date-quick-btns{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.date-quick-btn{padding:3px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:11px;color:#555;transition:all .15s}
+.date-quick-btn:hover{border-color:#1a73e8;color:#1a73e8;background:#f0f7ff}
+.date-quick-btn.active{background:#1a73e8;color:#fff;border-color:#1a73e8}
+/* 列宽拖拽 */
+.col-resizer{position:absolute;top:0;right:0;width:5px;height:100%;cursor:col-resize;user-select:none;z-index:5}
+.col-resizer:hover,.col-resizer.active{background:#1a73e8;opacity:.4}
+/* 统计卡片同比环比 */
+.stat-card .trend{font-size:11px;margin-top:2px}
+.stat-card .trend.up{color:#f44336}
+.stat-card .trend.down{color:#4caf50}
+.stat-card .trend.flat{color:#999}
+/* 详情页空状态 */
+.detail-empty{text-align:center;padding:40px 20px;color:#999;background:#fff;border-radius:8px;margin-bottom:12px}
+.detail-empty .icon{font-size:36px;margin-bottom:8px}
+/* 分页 */
+.pagination{display:flex;gap:4px;justify-content:center;align-items:center;margin-top:12px;flex-wrap:wrap}
+.pagination button{padding:4px 10px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;color:#555}
+.pagination button:hover:not(:disabled){border-color:#1a73e8;color:#1a73e8}
+.pagination button.active{background:#1a73e8;color:#fff;border-color:#1a73e8}
+.pagination button:disabled{opacity:.4;cursor:not-allowed}
+.pagination .page-info{font-size:12px;color:#999;margin:0 8px}
 .part-cell:hover{text-decoration:underline}
 @media (max-width:768px) and (orientation:portrait){
   .layout{flex-direction:column}
@@ -147,6 +190,7 @@ tr.detail-row:hover td{background:#f0f7ff}
   <div class="actions">
     <span class="user-tag" id="userTag"></span>
     <button class="btn btn-secondary btn-sm" onclick="toggleFilterPanel()" id="filterToggleBtn">🔍 筛选</button>
+    <button class="btn btn-secondary btn-sm" onclick="refreshData()" id="refreshBtn" title="刷新数据">🔄 刷新</button>
     <button class="btn btn-secondary btn-sm" onclick="openColSetting()">⚙ 列设置</button>
     <button class="btn btn-secondary btn-sm" id="adminBackBtn" style="display:none" onclick="location.href='/admin'">⚙ 管理后台</button>
     <button class="btn btn-secondary btn-sm" onclick="openExcelExportModal()" id="exportExcelBtn">📥 导出Excel</button>
@@ -170,6 +214,7 @@ tr.detail-row:hover td{background:#f0f7ff}
     <div class="sidebar" id="homeSidebar">
       <div class="customer-list">
         <h3>客户列表</h3>
+        <div class="sidebar-search"><input type="text" id="homeSidebarSearch" placeholder="搜索客户..." oninput="filterSidebarList('home')"></div>
         <div class="customer-scroll" id="homeCustomerList"></div>
       </div>
     </div>
@@ -200,7 +245,7 @@ tr.detail-row:hover td{background:#f0f7ff}
         <div class="table-card">
           <h3>客户总览 <span style="font-size:12px;color:#999;font-weight:normal">点击数字列表头排序 · 点击行查看详情</span></h3>
           <div style="overflow-x:auto">
-            <table id="overviewTable">
+            <table id="overviewTable" class="table-fixed-first">
               <thead id="overviewHead"></thead>
               <tbody id="overviewBody"></tbody>
             </table>
@@ -216,12 +261,20 @@ tr.detail-row:hover td{background:#f0f7ff}
     <div class="sidebar" id="detailSidebar">
       <div class="customer-list">
         <h3>客户列表（点击切换）</h3>
+        <div class="sidebar-search"><input type="text" id="detailSidebarSearch" placeholder="搜索客户..." oninput="filterSidebarList('detail')"></div>
         <div class="customer-scroll" id="detailCustomerList"></div>
       </div>
     </div>
     <div class="main">
       <div id="detailDateRange" style="background:#fff;border-radius:8px;padding:8px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);font-size:13px;color:#555"><span style="color:#1a73e8;font-weight:600">📅 数据范围：</span><span id="detailDateRangeText">加载中...</span></div>
+      <div class="date-quick-btns" id="detailDateQuickBtns">
+        <button class="date-quick-btn" onclick="setQuickDate('7d')">近7天</button>
+        <button class="date-quick-btn" onclick="setQuickDate('30d')">近30天</button>
+        <button class="date-quick-btn" onclick="setQuickDate('month')">本月</button>
+        <button class="date-quick-btn" onclick="setQuickDate('all')">全部</button>
+      </div>
       <div class="stats-row" id="detailStats"></div>
+      <div id="detailEmpty" class="detail-empty hidden"><div class="icon">📭</div><p>当前筛选条件下暂无数据</p><button class="btn btn-outline btn-sm" onclick="resetFilters()">重置筛选</button></div>
       <div class="chart-card" id="detailChartCard">
         <h3 id="detailChartTitle">炉次 - 板件数量</h3>
         <div class="chart-scroll"><div class="chart-container" id="detailChart"></div></div>
@@ -233,7 +286,7 @@ tr.detail-row:hover td{background:#f0f7ff}
       <div class="table-card">
         <h3>作业明细 <span style="font-size:12px;color:#999;font-weight:normal">按日期聚合 · 点击行展开当天明细 · 数字列可排序</span></h3>
         <div style="overflow-x:auto" id="detailTableWrap">
-          <table id="detailTable">
+          <table id="detailTable" class="table-fixed-first">
             <thead id="detailHead"></thead>
             <tbody id="detailBody"></tbody>
           </table>
@@ -327,6 +380,11 @@ tr.detail-row:hover td{background:#f0f7ff}
 <div class="loading-overlay" id="loadingOverlay">
   <div class="loading-spinner"></div>
   <div class="loading-text" id="loadingText">加载中...</div>
+</div>
+<!-- 浮动按钮组 -->
+<div class="floating-actions" id="floatingActions">
+  <button class="fab primary" id="fabBackHome" onclick="showHome()" style="display:none"><span class="fab-tip">返回主页</span>🏠</button>
+  <button class="fab" onclick="window.scrollTo({top:0,behavior:'smooth'})"><span class="fab-tip">回到顶部</span>⬆</button>
 </div>
 <!-- PDF导出隐藏容器 -->
 <div id="pdfContainer" style="position:absolute;left:-9999px;top:0;width:1100px;background:#fff;"></div>
@@ -506,6 +564,7 @@ async function init(){
 
 // ========== 筛选 ==========
 let filterValues={customer:'',dateStart:'',dateEnd:'',furnaceMin:null,furnaceMax:null,boardMin:null,boardMax:null};
+let selectedFilterCustomers=new Set(); // 多选筛选客户
 
 function buildFilterPanel(){
   const grid=document.getElementById('filterGrid');
@@ -538,18 +597,123 @@ function onCustomerSearch(val){
   const input=document.getElementById('f_customer');
   if(!dropdown||!input)return;
   const kw=val.trim().toLowerCase();
-  if(!kw){dropdown.classList.remove('show');if(!currentCustomer)applyFilters();return;}
-  const matches=overviewData.filter(d=>d.customer_name.toLowerCase().includes(kw)).slice(0,15);
-  if(matches.length===0)dropdown.innerHTML='<div class="dropdown-item" style="color:#999">无匹配客户</div>';
-  else dropdown.innerHTML=matches.map(m=>`<div class="dropdown-item" onclick="selectCustomerFilter('${escapeHtml(m.customer_name)}')">${escapeHtml(m.customer_name)}</div>`).join('');
-  // fixed定位：基于输入框位置计算
+  // 获取匹配的客户（基于总览数据，不受已选客户限制）
+  const matches=overviewData.filter(d=>!kw||d.customer_name.toLowerCase().includes(kw)).slice(0,50);
+  // 构建下拉列表：顶部操作栏 + 客户多选列表
+  let html='<div style="padding:6px 10px;border-bottom:1px solid #eee;display:flex;gap:6px;align-items:center;background:#f9fbff;position:sticky;top:0;z-index:1">';
+  html+=`<span style="font-size:11px;color:#666;flex:1">已选 <strong style="color:#1a73e8">${selectedFilterCustomers.size}</strong> 个客户</span>`;
+  html+='<button class="btn btn-outline btn-sm" onclick="selectAllFilterCustomers()" style="padding:2px 8px;font-size:11px">全选</button>';
+  html+='<button class="btn btn-outline btn-sm" onclick="clearFilterCustomers()" style="padding:2px 8px;font-size:11px">清除</button>';
+  html+='</div>';
+  if(matches.length===0){
+    html+='<div class="dropdown-item" style="color:#999">无匹配客户</div>';
+  }else{
+    html+=matches.map(m=>{
+      const checked=selectedFilterCustomers.has(m.customer_name)?'checked':'';
+      return `<div class="dropdown-item" style="display:flex;align-items:center;gap:8px;padding:7px 12px" onclick="event.stopPropagation();toggleFilterCustomer('${escapeHtml(m.customer_name)}')">
+        <input type="checkbox" ${checked} onclick="event.stopPropagation();toggleFilterCustomer('${escapeHtml(m.customer_name)}')" style="cursor:pointer;width:14px;height:14px;flex-shrink:0">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(m.customer_name)}</span>
+      </div>`;
+    }).join('');
+  }
+  dropdown.innerHTML=html;
+  // fixed定位
   const rect=input.getBoundingClientRect();
   dropdown.style.left=rect.left+'px';
   dropdown.style.top=(rect.bottom+2)+'px';
   dropdown.style.width=rect.width+'px';
   dropdown.classList.add('show');
-  // 详情页输入时不自动切换客户，仅显示下拉列表；首页才实时筛选
+  // 详情页输入时不自动切换，首页实时筛选
   if(!currentCustomer)applyFilters();
+}
+function toggleFilterCustomer(name){
+  if(selectedFilterCustomers.has(name))selectedFilterCustomers.delete(name);
+  else selectedFilterCustomers.add(name);
+  // 刷新下拉列表（保持打开）
+  onCustomerSearch(document.getElementById('f_customer').value);
+  if(!currentCustomer)applyFilters();
+}
+function selectAllFilterCustomers(){
+  const kw=document.getElementById('f_customer').value.trim().toLowerCase();
+  overviewData.filter(d=>!kw||d.customer_name.toLowerCase().includes(kw)).forEach(d=>selectedFilterCustomers.add(d.customer_name));
+  onCustomerSearch(document.getElementById('f_customer').value);
+  if(!currentCustomer)applyFilters();
+}
+function clearFilterCustomers(){
+  selectedFilterCustomers.clear();
+  onCustomerSearch(document.getElementById('f_customer').value);
+  if(!currentCustomer)applyFilters();
+}
+
+// ========== 侧边栏客户搜索过滤 ==========
+function filterSidebarList(scope){
+  const searchId=scope==='home'?'homeSidebarSearch':'detailSidebarSearch';
+  const listId=scope==='home'?'homeCustomerList':'detailCustomerList';
+  const kw=document.getElementById(searchId).value.trim().toLowerCase();
+  // 侧边栏搜索所有客户（不受筛选条件影响）
+  const names=overviewData.map(d=>d.customer_name).filter(n=>!kw||n.toLowerCase().includes(kw));
+  renderCustomerList(listId,names,scope==='detail'?currentCustomer:null);
+}
+
+// ========== 详情页日期快捷筛选 ==========
+function setQuickDate(type){
+  const today=new Date();
+  let start='',end='';
+  if(type==='7d'){
+    const d=new Date(today);d.setDate(d.getDate()-6);
+    start=formatDate(d);end=formatDate(today);
+  }else if(type==='30d'){
+    const d=new Date(today);d.setDate(d.getDate()-29);
+    start=formatDate(d);end=formatDate(today);
+  }else if(type==='month'){
+    start=formatDate(new Date(today.getFullYear(),today.getMonth(),1));
+    end=formatDate(today);
+  }
+  // 更新筛选面板的日期输入
+  const ds=document.getElementById('f_dateStart');
+  const de=document.getElementById('f_dateEnd');
+  if(ds)ds.value=start;if(de)de.value=end;
+  filterValues.dateStart=start;filterValues.dateEnd=end;
+  // 更新快捷按钮active状态
+  document.querySelectorAll('.date-quick-btn').forEach(b=>b.classList.remove('active'));
+  if(type!=='all'){
+    const btn=[...document.querySelectorAll('.date-quick-btn')].find(b=>b.textContent.includes(type==='7d'?'7天':type==='30d'?'30天':'本月'));
+    if(btn)btn.classList.add('active');
+  }
+  applyFilters();
+}
+
+// ========== 数据刷新 ==========
+async function refreshData(){
+  showLoading('刷新数据中...');
+  trendCache={key:'',data:null};
+  try{
+    const [ovRes,partsRes]=await Promise.all([api('/api/overview'),api('/api/parts-stats')]);
+    overviewData=await ovRes.json();
+    partsStatsAll=await partsRes.json();
+    // 重建筛选面板（客户列表可能变化）
+    buildFilterPanel();
+    if(currentCustomer){
+      // 刷新当前客户详情
+      const [dailyRes,recordsRes,partsRes2]=await Promise.all([
+        api('/api/daily/'+encodeURIComponent(currentCustomer)),
+        api('/api/records/'+encodeURIComponent(currentCustomer)),
+        api('/api/parts-stats?customer='+encodeURIComponent(currentCustomer))
+      ]);
+      dailyData=await dailyRes.json();
+      detailRecords=await recordsRes.json();
+      partsStatsCustomer=await partsRes2.json();
+      renderDetail();
+    }else{
+      renderHome();
+    }
+    setTimeout(resizeAllCharts,100);
+    showToast('数据已刷新','success');
+  }catch(e){
+    showToast('刷新失败：'+e.message,'error');
+  }finally{
+    hideLoading();
+  }
 }
 document.addEventListener('click',e=>{
   const d=document.getElementById('customerDropdown');
@@ -575,6 +739,8 @@ function onFilterChange(){
 
 function resetFilters(){
   filterValues={customer:'',dateStart:'',dateEnd:'',furnaceMin:null,furnaceMax:null,boardMin:null,boardMax:null};
+  selectedFilterCustomers.clear();
+  trendCache={key:'',data:null};
   buildFilterPanel();
   applyFilters();
   showToast('已重置筛选');
@@ -582,7 +748,10 @@ function resetFilters(){
 
 function getFilteredOverview(){
   return overviewData.filter(d=>{
-    if(filterValues.customer&&!d.customer_name.toLowerCase().includes(filterValues.customer.toLowerCase()))return false;
+    // 多选客户筛选（优先）
+    if(selectedFilterCustomers.size>0 && !selectedFilterCustomers.has(d.customer_name))return false;
+    // 关键词筛选（仅在未使用多选时生效）
+    if(selectedFilterCustomers.size===0 && filterValues.customer && !d.customer_name.toLowerCase().includes(filterValues.customer.toLowerCase()))return false;
     if(filterValues.furnaceMin&&num(d.furnace)<num(filterValues.furnaceMin))return false;
     if(filterValues.furnaceMax&&num(d.furnace)>num(filterValues.furnaceMax))return false;
     if(filterValues.boardMin&&num(d.board_count)<num(filterValues.boardMin))return false;
@@ -609,8 +778,11 @@ function toggleFilterPanel(){
 // ========== 首页渲染 ==========
 function renderHome(){
   const data=getFilteredOverview();
-  const names=data.map(d=>d.customer_name);
-  renderCustomerList('homeCustomerList',names,null);
+  // 侧边栏显示所有客户（不受筛选影响，方便导航）
+  const allNames=overviewData.map(d=>d.customer_name);
+  renderCustomerList('homeCustomerList',allNames,null);
+  // 重置侧边栏搜索框
+  const hs=document.getElementById('homeSidebarSearch');if(hs)hs.value='';
   // 计算并显示日期区间
   updateDateRange(data, 'homeDateRangeText');
 
@@ -631,6 +803,8 @@ function renderHome(){
     <div class="stat-card"><div class="label">总板件数</div><div class="value orange">${totals.board}</div></div>
     <div class="stat-card"><div class="label">总时长(min)</div><div class="value purple">${formatVal(totals.duration,1)}</div></div>
   `;
+  // 异步加载环比数据（O10）
+  loadTrendStats(data);
 
   // 图表
   renderHomeCharts(data);
@@ -728,6 +902,7 @@ function renderOverviewTable(data){
     <td><strong>${escapeHtml(d.customer_name)}</strong></td>
     ${cols.map(c=>`<td>${formatVal(d[c.key],c.decimals)}</td>`).join('')}
   </tr>`).join('');
+  setTimeout(()=>initColumnResize('overviewTable'),50);
 }
 
 function sortOverview(key){
@@ -756,8 +931,10 @@ async function showDetail(customerName){
   document.getElementById('customerNameFixed').classList.remove('hidden');
   document.getElementById('topbarTitle').textContent='作业详情';
 
-  const names=getFilteredOverview().map(d=>d.customer_name);
-  renderCustomerList('detailCustomerList',names,customerName);
+  // 侧边栏显示所有客户（不受筛选影响）
+  const allNames=overviewData.map(d=>d.customer_name);
+  renderCustomerList('detailCustomerList',allNames,customerName);
+  const ds=document.getElementById('detailSidebarSearch');if(ds)ds.value='';
 
   showLoading('加载详情...');
   try{
@@ -798,6 +975,21 @@ function renderDetail(){
       if(filterValues.dateEnd&&formatDate(d.record_date)>filterValues.dateEnd)return false;
       return true;
     });
+  }
+
+  // 更新日期快捷按钮active状态
+  document.querySelectorAll('.date-quick-btn').forEach(b=>b.classList.remove('active'));
+
+  // 空状态处理（B2）
+  const emptyEl=document.getElementById('detailEmpty');
+  const chartCards=document.querySelectorAll('#detailPage .chart-card,#detailPage .table-card,#detailPage .stats-row');
+  if(filtered.length===0){
+    if(emptyEl)emptyEl.classList.remove('hidden');
+    chartCards.forEach(el=>el.classList.add('hidden'));
+    return;
+  }else{
+    if(emptyEl)emptyEl.classList.add('hidden');
+    chartCards.forEach(el=>el.classList.remove('hidden'));
   }
 
   // 统计
@@ -879,6 +1071,7 @@ function renderDetailTable(daily){
     }
   });
   tbody.innerHTML=html;
+  setTimeout(()=>initColumnResize('detailTable'),50);
 }
 
 function sortDetail(key){
@@ -1090,8 +1283,10 @@ async function doExport(){
   const isSubAccount=userInfo&&userInfo.role!=='admin';
   const wmText=isSubAccount?'CURVEROBOT · '+userInfo.username:'CURVEROBOT';
 
-  // ========== 1. 渲染汇总图表（固定尺寸，避免变形） ==========
-  const sortedAll=[...getFilteredOverview()].sort((a,b)=>num(b.board_count)-num(a.board_count));
+  // ========== 1. 渲染汇总图表（仅使用选中客户的数据，固定尺寸避免变形） ==========
+  // 从总览中筛选出选中的客户
+  const selectedOverview=getFilteredOverview().filter(d=>names.includes(d.customer_name));
+  const sortedAll=[...selectedOverview].sort((a,b)=>num(b.board_count)-num(a.board_count));
   const namesAll=sortedAll.map(d=>d.customer_name);
   const summaryCharts=[];
 
@@ -1127,16 +1322,8 @@ async function doExport(){
       series:[{type:'bar',data:sortedAll.map(d=>num(d.board_count)).reverse(),itemStyle:{color:'#1a73e8'},label:{show:true,position:'right',fontSize:10}}]
     },820,rankH),fullWidth:true});
   }
-  if(displayConfig['chart_chartParts']){
-    const top20=partsStatsAll.slice(0,20);
-    summaryCharts.push({title:'部件数量统计',dataUrl:renderPdfChart({
-      tooltip:{trigger:'axis',formatter:p=>p[0].name+'<br>出现次数: '+p[0].value},
-      grid:{left:110,right:40,top:15,bottom:25},
-      xAxis:{type:'value'},
-      yAxis:{type:'category',data:[...top20].map(d=>d.part_name).reverse(),axisLabel:{fontSize:10}},
-      series:[{type:'bar',data:[...top20].map(d=>num(d.count)).reverse(),itemStyle:{color:'#9c27b0'},label:{show:true,position:'right',fontSize:10}}]
-    },760,Math.max(300,top20.length*20+50))});
-  }
+  // 部件统计图表延后到客户数据获取后，用选中客户的合并数据渲染
+  // if(displayConfig['chart_chartParts']){...}  // 移至下方
 
   // ========== 2. 获取每个客户数据 + 生成详情图表 ==========
   const customerData=[];
@@ -1187,6 +1374,28 @@ async function doExport(){
     hideLoading();
     showToast('数据获取失败：'+e.message,'error');
     return;
+  }
+
+  // 合并选中客户的部件统计，渲染汇总部件图表（仅选中客户）
+  if(displayConfig['chart_chartParts']){
+    const partsMap={};
+    customerData.forEach(c=>{
+      (c.parts||[]).forEach(p=>{
+        const key=p.part_name||p.name||'';
+        if(!key)return;
+        partsMap[key]=(partsMap[key]||0)+num(p.count);
+      });
+    });
+    const mergedParts=Object.entries(partsMap).map(([part_name,count])=>({part_name,count})).sort((a,b)=>b.count-a.count).slice(0,20);
+    if(mergedParts.length>0){
+      summaryCharts.push({title:'部件数量统计（选中客户）',dataUrl:renderPdfChart({
+        tooltip:{trigger:'axis',formatter:p=>p[0].name+'<br>出现次数: '+p[0].value},
+        grid:{left:110,right:40,top:15,bottom:25},
+        xAxis:{type:'value'},
+        yAxis:{type:'category',data:[...mergedParts].map(d=>d.part_name).reverse(),axisLabel:{fontSize:10}},
+        series:[{type:'bar',data:[...mergedParts].map(d=>num(d.count)).reverse(),itemStyle:{color:'#9c27b0'},label:{show:true,position:'right',fontSize:10}}]
+      },760,Math.max(300,mergedParts.length*20+50))});
+    }
   }
 
   // ========== 3. 构建报告HTML到隐藏容器 ==========
@@ -1405,6 +1614,114 @@ function renderChartToDataURL(data,type,customerName){
   }
 }
 
+// ========== 表格列宽拖拽调整（O6） ==========
+const colWidths={}; // {tableId_colIndex: width}
+function initColumnResize(tableId){
+  const table=document.getElementById(tableId);
+  if(!table)return;
+  const ths=table.querySelectorAll('thead th');
+  ths.forEach((th,idx)=>{
+    // 移除旧的resizer
+    th.querySelectorAll('.col-resizer').forEach(r=>r.remove());
+    // th需要relative定位
+    th.style.position='relative';
+    th.style.cursor='pointer';
+    const resizer=document.createElement('div');
+    resizer.className='col-resizer';
+    resizer.addEventListener('mousedown',e=>{
+      e.preventDefault();e.stopPropagation();
+      resizer.classList.add('active');
+      const startX=e.pageX;
+      const startWidth=th.offsetWidth;
+      const key=tableId+'_'+idx;
+      function onMove(ev){
+        const newWidth=Math.max(60,startWidth+(ev.pageX-startX));
+        th.style.width=newWidth+'px';
+        th.style.minWidth=newWidth+'px';
+        colWidths[key]=newWidth;
+      }
+      function onUp(){
+        resizer.classList.remove('active');
+        document.removeEventListener('mousemove',onMove);
+        document.removeEventListener('mouseup',onUp);
+      }
+      document.addEventListener('mousemove',onMove);
+      document.addEventListener('mouseup',onUp);
+    });
+    th.appendChild(resizer);
+    // 恢复已保存的宽度
+    const key=tableId+'_'+idx;
+    if(colWidths[key]){
+      th.style.width=colWidths[key]+'px';
+      th.style.minWidth=colWidths[key]+'px';
+    }
+  });
+}
+let trendCache={key:'',data:null};
+async function loadTrendStats(data){
+  // 确定当前周期
+  let start,end;
+  if(filterValues.dateStart&&filterValues.dateEnd){
+    start=filterValues.dateStart;end=filterValues.dateEnd;
+  }else{
+    // 从数据中取最小最大日期
+    const dates=data.map(d=>new Date(d.first_time)).filter(t=>!isNaN(t));
+    if(dates.length===0)return;
+    start=formatDate(new Date(Math.min(...dates)));
+    end=formatDate(new Date(Math.max(...dates)));
+  }
+  const cacheKey=start+'_'+end+'_'+data.length;
+  if(trendCache.key===cacheKey&&trendCache.data){
+    updateStatsWithTrend(trendCache.data);
+    return;
+  }
+  // 计算上一周期（相同天数）
+  const startD=new Date(start),endD=new Date(end);
+  const days=Math.floor((endD-startD)/(1000*60*60*24))+1;
+  const prevEnd=new Date(startD);prevEnd.setDate(prevEnd.getDate()-1);
+  const prevStart=new Date(prevEnd);prevStart.setDate(prevStart.getDate()-days+1);
+  const prevStartStr=formatDate(prevStart),prevEndStr=formatDate(prevEnd);
+
+  // 并行获取所有客户的日聚合数据
+  try{
+    const names=data.map(d=>d.customer_name);
+    const results=await Promise.all(names.map(n=>api('/api/daily/'+encodeURIComponent(n)).then(r=>r.ok?r.json():[]).catch(()=>[])));
+    let curFurnace=0,curBoard=0,curDur=0,prevFurnace=0,prevBoard=0,prevDur=0;
+    results.forEach(daily=>{
+      daily.forEach(d=>{
+        const ds=formatDate(d.record_date);
+        if(ds>=start&&ds<=end){curFurnace+=num(d.furnace);curBoard+=num(d.board_count);curDur+=num(d.duration_min);}
+        else if(ds>=prevStartStr&&ds<=prevEndStr){prevFurnace+=num(d.furnace);prevBoard+=num(d.board_count);prevDur+=num(d.duration_min);}
+      });
+    });
+    const trendData={
+      furnace:{cur:curFurnace,prev:prevFurnace,pct:prevFurnace>0?((curFurnace-prevFurnace)/prevFurnace*100):null},
+      board:{cur:curBoard,prev:prevBoard,pct:prevBoard>0?((curBoard-prevBoard)/prevBoard*100):null},
+      duration:{cur:curDur,prev:prevDur,pct:prevDur>0?((curDur-prevDur)/prevDur*100):null},
+      period:`${start} ~ ${end}`,
+      prevPeriod:`${prevStartStr} ~ ${prevEndStr}`
+    };
+    trendCache={key:cacheKey,data:trendData};
+    updateStatsWithTrend(trendData);
+  }catch(e){console.warn('趋势统计加载失败:',e);}
+}
+function updateStatsWithTrend(trend){
+  const statsEl=document.getElementById('homeStats');
+  if(!statsEl)return;
+  const cards=statsEl.querySelectorAll('.stat-card');
+  if(cards.length<4)return;
+  // 炉数（第2张）、板件（第3张）、时长（第4张）
+  const trendHtml=(t)=>{
+    if(t.pct===null)return '<div class="trend flat">环比 —</div>';
+    const cls=t.pct>=0?'up':'down';
+    const arrow=t.pct>=0?'↑':'↓';
+    return `<div class="trend ${cls}" title="上一周期：${t.prev}">环比 ${arrow} ${Math.abs(t.pct).toFixed(1)}%</div>`;
+  };
+  if(cards[1])cards[1].innerHTML+=trendHtml(trend.furnace);
+  if(cards[2])cards[2].innerHTML+=trendHtml(trend.board);
+  if(cards[3])cards[3].innerHTML+=trendHtml(trend.duration);
+}
+
 // ========== 工具 ==========
 function updateDateRange(data, elementId, isDaily){
   const el=document.getElementById(elementId);
@@ -1449,6 +1766,7 @@ function exportExcel(){
     a.download=currentCustomer+'_'+new Date().toISOString().slice(0,10)+'.xlsx';
     a.click();
     URL.revokeObjectURL(a.href);
+    logExport('Excel',[currentCustomer]);
     showToast('导出成功','success');
   }).catch(e=>{
     showToast('导出失败：'+e.message,'error');
@@ -1458,6 +1776,13 @@ function resizeAllCharts(){
   [chart1Inst,chart2Inst,chart3Inst,chartPartsInst,detailChartInst,detailPartsInst].forEach(c=>{if(c)c.resize();});
 }
 window.addEventListener('resize',resizeAllCharts);
+// 浮动按钮：滚动超过300px显示，详情页显示返回主页按钮
+window.addEventListener('scroll',()=>{
+  const fab=document.getElementById('floatingActions');
+  const backBtn=document.getElementById('fabBackHome');
+  if(window.scrollY>300)fab.classList.add('show');else fab.classList.remove('show');
+  if(currentCustomer)backBtn.style.display='flex';else backBtn.style.display='none';
+});
 
 // 启动
 init();

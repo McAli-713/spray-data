@@ -83,6 +83,13 @@ tr:hover td{background:#f9fbff}
 .toast.success{background:#4caf50}
 .toast.error{background:#f44336}
 .empty{text-align:center;padding:40px;color:#999;font-size:14px}
+/* 分页 */
+.pagination{display:flex;gap:4px;justify-content:center;align-items:center;margin-top:12px;flex-wrap:wrap}
+.pagination button{padding:4px 10px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;color:#555}
+.pagination button:hover:not(:disabled){border-color:#1a73e8;color:#1a73e8}
+.pagination button.active{background:#1a73e8;color:#fff;border-color:#1a73e8}
+.pagination button:disabled{opacity:.4;cursor:not-allowed}
+.pagination .page-info{font-size:12px;color:#999;margin:0 8px}
 </style>
 <script src="/auth.js"></script>
 </head>
@@ -275,6 +282,10 @@ const ALL_COLUMNS=[
   {key:'device',label:'设备'}
 ];
 let customerList=[];
+// 分页状态
+const PAGE_SIZE=20;
+let uploadPage=1, exportPage=1;
+let allUploadRecords=[], allExportRecords=[];
 
 // 认证检查
 if(!Auth.requireAuth()){}
@@ -492,30 +503,104 @@ async function loadUploadRecords(){
   try{
     const res=await api('/api/uploads');
     if(!res.ok){const d=await res.json().catch(()=>({}));showToast(d.error||'加载失败','error');return;}
-    const records=await res.json();
-    const tbody=document.getElementById('uploadRecordsBody');
-    if(!records||records.length===0){
-      tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;padding:30px">暂无上传记录</td></tr>';
-      return;
-    }
-    tbody.innerHTML=records.map(r=>{
-      const sizeKB=(r.file_size/1024).toFixed(1);
-      const sizeStr=r.file_size>1024*1024?(r.file_size/1024/1024).toFixed(2)+' MB':sizeKB+' KB';
-      const customers=Array.isArray(r.customers)?r.customers:[];
-      const custStr=customers.length>0?customers.slice(0,3).join('、')+(customers.length>3?' 等'+customers.length+'个':''):'-';
-      return `<tr>
-        <td>${r.id}</td>
-        <td><strong title="${escapeHtml(r.original_filename)}">${escapeHtml(r.original_filename)}</strong></td>
-        <td>${escapeHtml(r.uploader_username||'-')}</td>
-        <td style="font-size:12px">${new Date(r.uploaded_at).toLocaleString('zh-CN',{hour12:false})}</td>
-        <td>${sizeStr}</td>
-        <td style="color:#4caf50;font-weight:600">${r.inserted_count}</td>
-        <td style="color:#ff9800;font-weight:600">${r.updated_count}</td>
-        <td style="font-size:12px;max-width:200px" title="${escapeHtml(customers.join('、'))}">${escapeHtml(custStr)}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="downloadUpload(${r.id})">⬇ 下载</button></td>
-      </tr>`;
-    }).join('');
+    allUploadRecords=await res.json();
+    uploadPage=1;
+    renderUploadRecords();
   }catch(e){showToast('加载上传记录失败','error');}
+}
+function renderUploadRecords(){
+  const tbody=document.getElementById('uploadRecordsBody');
+  const records=allUploadRecords;
+  if(!records||records.length===0){
+    tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;padding:30px">暂无上传记录</td></tr>';
+    renderPagination('uploadPagination',0,1,1);
+    return;
+  }
+  const totalPages=Math.ceil(records.length/PAGE_SIZE);
+  if(uploadPage>totalPages)uploadPage=totalPages;
+  const start=(uploadPage-1)*PAGE_SIZE;
+  const pageRecords=records.slice(start,start+PAGE_SIZE);
+  tbody.innerHTML=pageRecords.map(r=>{
+    const sizeKB=(r.file_size/1024).toFixed(1);
+    const sizeStr=r.file_size>1024*1024?(r.file_size/1024/1024).toFixed(2)+' MB':sizeKB+' KB';
+    const customers=Array.isArray(r.customers)?r.customers:[];
+    const custStr=customers.length>0?customers.slice(0,3).join('、')+(customers.length>3?' 等'+customers.length+'个':''):'-';
+    return `<tr>
+      <td>${r.id}</td>
+      <td><strong title="${escapeHtml(r.original_filename)}">${escapeHtml(r.original_filename)}</strong></td>
+      <td>${escapeHtml(r.uploader_username||'-')}</td>
+      <td style="font-size:12px">${new Date(r.uploaded_at).toLocaleString('zh-CN',{hour12:false})}</td>
+      <td>${sizeStr}</td>
+      <td style="color:#4caf50;font-weight:600">${r.inserted_count}</td>
+      <td style="color:#ff9800;font-weight:600">${r.updated_count}</td>
+      <td style="font-size:12px;max-width:200px" title="${escapeHtml(customers.join('、'))}">${escapeHtml(custStr)}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="downloadUpload(${r.id})">⬇ 下载</button></td>
+    </tr>`;
+  }).join('');
+  renderPagination('uploadPagination',records.length,uploadPage,totalPages,'goUploadPage');
+}
+function goUploadPage(p){uploadPage=p;renderUploadRecords();}
+// ========== 导出记录 ==========
+async function loadExportRecords(){
+  try{
+    const res=await api('/api/export-log');
+    if(!res.ok){const d=await res.json().catch(()=>({}));showToast(d.error||'加载失败','error');return;}
+    allExportRecords=await res.json();
+    exportPage=1;
+    renderExportRecords();
+  }catch(e){showToast('加载导出记录失败','error');}
+}
+function renderExportRecords(){
+  const tbody=document.getElementById('exportRecordsBody');
+  const records=allExportRecords;
+  if(!records||records.length===0){
+    tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;padding:30px">暂无导出记录</td></tr>';
+    renderPagination('exportPagination',0,1,1);
+    return;
+  }
+  const totalPages=Math.ceil(records.length/PAGE_SIZE);
+  if(exportPage>totalPages)exportPage=totalPages;
+  const start=(exportPage-1)*PAGE_SIZE;
+  const pageRecords=records.slice(start,start+PAGE_SIZE);
+  tbody.innerHTML=pageRecords.map(r=>{
+    const customers=Array.isArray(r.customers)?r.customers:[];
+    const custStr=customers.length>0?customers.slice(0,3).join('、')+(customers.length>3?' 等'+customers.length+'个':''):'-';
+    return `<tr>
+      <td>${r.id}</td>
+      <td><strong>${escapeHtml(r.username||'-')}</strong></td>
+      <td><span class="badge ${r.role==='admin'?'badge-admin':'badge-sub'}">${r.role==='admin'?'管理员':'子账号'}</span></td>
+      <td><span class="badge ${r.type==='PDF'?'badge-admin':'badge-sub'}">${escapeHtml(r.type||'-')}</span></td>
+      <td style="font-weight:600;color:#1a73e8">${r.customer_count||0}</td>
+      <td style="font-size:12px;max-width:250px" title="${escapeHtml(customers.join('、'))}">${escapeHtml(custStr)}</td>
+      <td style="font-size:12px">${new Date(r.exported_at).toLocaleString('zh-CN',{hour12:false})}</td>
+    </tr>`;
+  }).join('');
+  renderPagination('exportPagination',records.length,exportPage,totalPages,'goExportPage');
+}
+function goExportPage(p){exportPage=p;renderExportRecords();}
+// 分页UI渲染
+function renderPagination(containerId,total,current,totalPages,goFunc){
+  let el=document.getElementById(containerId);
+  if(!el){
+    // 创建分页容器
+    el=document.createElement('div');
+    el.id=containerId;
+    el.className='pagination';
+    const table=document.getElementById(containerId.replace('Pagination','')==='upload'?'uploadRecordsTable':'exportRecordsTable');
+    if(table&&table.parentElement)table.parentElement.appendChild(el);
+  }
+  if(total===0){el.innerHTML='';return;}
+  let html=`<span class="page-info">共 ${total} 条，第 ${current}/${totalPages} 页</span>`;
+  html+=`<button onclick="${goFunc}(1)" ${current<=1?'disabled':''}>« 首页</button>`;
+  html+=`<button onclick="${goFunc}(${current-1})" ${current<=1?'disabled':''}>‹ 上一页</button>`;
+  // 页码按钮（最多显示5个）
+  const startP=Math.max(1,current-2),endP=Math.min(totalPages,current+2);
+  for(let i=startP;i<=endP;i++){
+    html+=`<button onclick="${goFunc}(${i})" class="${i===current?'active':''}">${i}</button>`;
+  }
+  html+=`<button onclick="${goFunc}(${current+1})" ${current>=totalPages?'disabled':''}>下一页 ›</button>`;
+  html+=`<button onclick="${goFunc}(${totalPages})" ${current>=totalPages?'disabled':''}>末页 »</button>`;
+  el.innerHTML=html;
 }
 function downloadUpload(id){
   // 用带token的方式下载
@@ -529,32 +614,6 @@ function downloadUpload(id){
     a.click();
     URL.revokeObjectURL(a.href);
   }).catch(e=>{showToast('下载失败：'+e.message,'error');});
-}
-// ========== 导出记录 ==========
-async function loadExportRecords(){
-  try{
-    const res=await api('/api/export-log');
-    if(!res.ok){const d=await res.json().catch(()=>({}));showToast(d.error||'加载失败','error');return;}
-    const records=await res.json();
-    const tbody=document.getElementById('exportRecordsBody');
-    if(!records||records.length===0){
-      tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;padding:30px">暂无导出记录</td></tr>';
-      return;
-    }
-    tbody.innerHTML=records.map(r=>{
-      const customers=Array.isArray(r.customers)?r.customers:[];
-      const custStr=customers.length>0?customers.slice(0,3).join('、')+(customers.length>3?' 等'+customers.length+'个':''):'-';
-      return `<tr>
-        <td>${r.id}</td>
-        <td><strong>${escapeHtml(r.username||'-')}</strong></td>
-        <td><span class="badge ${r.role==='admin'?'badge-admin':'badge-sub'}">${r.role==='admin'?'管理员':'子账号'}</span></td>
-        <td><span class="badge ${r.type==='PDF'?'badge-admin':'badge-sub'}">${escapeHtml(r.type||'-')}</span></td>
-        <td style="font-weight:600;color:#1a73e8">${r.customer_count||0}</td>
-        <td style="font-size:12px;max-width:250px" title="${escapeHtml(customers.join('、'))}">${escapeHtml(custStr)}</td>
-        <td style="font-size:12px">${new Date(r.exported_at).toLocaleString('zh-CN',{hour12:false})}</td>
-      </tr>`;
-    }).join('');
-  }catch(e){showToast('加载导出记录失败','error');}
 }
 // 文件上传
 const uploadArea=document.getElementById('uploadArea');
