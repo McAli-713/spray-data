@@ -180,6 +180,43 @@ tr.detail-row:hover td{background:#f0f7ff}
 /* 环比详情提示（S3） */
 .trend-detail{font-size:10px;color:#999;margin-top:1px;cursor:help}
 .trend-empty{font-size:10px;color:#bbb;margin-top:1px;font-style:italic}
+/* 自定义日期选择器 */
+.custom-date-input{width:100%;padding:5px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;outline:none;cursor:pointer;background:#fff;transition:border .2s}
+.custom-date-input:focus{border-color:#1a73e8}
+.custom-date-input.empty{color:#999}
+.date-picker-popup{display:none;position:fixed;background:#fff;border:1px solid #d0e3ff;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15);z-index:5000;padding:10px;width:260px;font-size:12px}
+.date-picker-popup.show{display:block}
+.date-picker-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.date-picker-header .dp-nav{background:none;border:none;cursor:pointer;font-size:14px;padding:2px 8px;border-radius:4px;color:#555}
+.date-picker-header .dp-nav:hover:not(:disabled){background:#f0f7ff;color:#1a73e8}
+.date-picker-header .dp-nav:disabled{color:#ccc;cursor:not-allowed;opacity:.4}
+.date-picker-header .dp-title{font-weight:600;color:#333;font-size:13px}
+.date-picker-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;margin-bottom:4px}
+.date-picker-weekdays span{text-align:center;font-size:10px;color:#999;padding:3px 0;font-weight:600}
+.date-picker-days{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}
+.date-picker-day{text-align:center;padding:5px 0;border-radius:4px;cursor:pointer;font-size:11px;transition:all .15s}
+.date-picker-day.available:hover{background:#e8f4ff;color:#1a73e8}
+.date-picker-day.unavailable{color:#ddd;cursor:not-allowed;background:#fafafa}
+.date-picker-day.other-month{color:#eee;cursor:default}
+.date-picker-day.selected{background:#1a73e8;color:#fff;font-weight:600}
+.date-picker-day.today{border:1px solid #1a73e8}
+.date-picker-footer{margin-top:8px;padding-top:8px;border-top:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+.date-picker-footer .dp-clear{background:none;border:none;color:#999;cursor:pointer;font-size:11px}
+.date-picker-footer .dp-clear:hover{color:#f44336}
+.date-picker-footer .dp-hint{font-size:10px;color:#bbb}
+/* 弹窗滚动隔离：打开时body不滚动 */
+body.modal-open{overflow:hidden}
+/* 统计卡片防溢出 */
+.stat-card{min-width:0;overflow:hidden}
+.stat-card .value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+@media (max-width:768px){
+  .stat-card .value{font-size:16px}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:480px){
+  .stat-card .value{font-size:14px}
+  .stat-card .label{font-size:10px}
+}
 .part-cell:hover{text-decoration:underline}
 @media (max-width:768px) and (orientation:portrait){
   .layout{flex-direction:column}
@@ -608,8 +645,8 @@ function buildFilterPanel(){
     <div class="filter-item"><label>客户名称</label>
       <input type="text" id="f_customer" placeholder="输入客户名搜索" autocomplete="off" oninput="onCustomerSearch(this.value)" onfocus="onCustomerSearch(this.value)">
       <div class="search-dropdown" id="customerDropdown"></div></div>
-    <div class="filter-item"><label>开始日期</label><input type="date" id="f_dateStart" onchange="onFilterChange()"></div>
-    <div class="filter-item"><label>结束日期</label><input type="date" id="f_dateEnd" onchange="onFilterChange()"></div>
+    <div class="filter-item"><label>开始日期</label><input type="text" id="f_dateStart" placeholder="选择日期" readonly></div>
+    <div class="filter-item"><label>结束日期</label><input type="text" id="f_dateEnd" placeholder="选择日期" readonly></div>
     <div class="filter-item"><label>炉数范围</label>
       <div style="display:flex;gap:4px;align-items:center">
         <input type="number" id="f_furnaceMin" placeholder="0" min="0" max="${furnaceMax}" onchange="onFilterChange()" style="flex:1">
@@ -623,6 +660,13 @@ function buildFilterPanel(){
         <input type="number" id="f_boardMax" placeholder="${boardMax}" min="0" max="${boardMax}" onchange="onFilterChange()" style="flex:1">
       </div></div>
   `;
+  // 初始化自定义日期选择器
+  setTimeout(()=>{
+    const ds=document.getElementById('f_dateStart');
+    const de=document.getElementById('f_dateEnd');
+    if(ds)initCustomDatePicker(ds,(val)=>{filterValues.dateStart=val;applyFilters();});
+    if(de)initCustomDatePicker(de,(val)=>{filterValues.dateEnd=val;applyFilters();});
+  },10);
 }
 
 function onCustomerSearch(val){
@@ -913,12 +957,15 @@ function toggleFilterPanel(){
   document.getElementById('filterPanel').classList.toggle('open',filterPanelOpen);
   document.getElementById('filterToggleBtn').textContent=filterPanelOpen?'✕ 关闭筛选':'🔍 筛选';
   if(filterPanelOpen){
+    lockBodyScroll();
     // S4: 打开筛选面板时聚焦客户搜索框并展开列表
     setTimeout(()=>{
       const input=document.getElementById('f_customer');
       if(input){input.focus();onCustomerSearch(input.value);}
     },350);
     updateFilterUI();
+  }else{
+    unlockBodyScroll();
   }
   setTimeout(resizeAllCharts,400);
 }
@@ -1257,8 +1304,9 @@ function openColSetting(){
   tempColConfig={...displayConfig};
   renderColSettingList();
   document.getElementById('colSettingModal').classList.add('show');
+  lockBodyScroll();
 }
-function closeColSetting(){document.getElementById('colSettingModal').classList.remove('show');}
+function closeColSetting(){document.getElementById('colSettingModal').classList.remove('show');unlockBodyScroll();}
 function renderColSettingList(){
   const container=document.getElementById('colSettingContent');
   const groups=[...new Set(COLUMN_DEFS.map(c=>c.group))];
@@ -1329,8 +1377,9 @@ function openExcelExportModal(){
   document.getElementById('excelExportSearch').value='';
   renderExcelExportList();
   document.getElementById('excelExportModal').classList.add('show');
+  lockBodyScroll();
 }
-function closeExcelExportModal(){document.getElementById('excelExportModal').classList.remove('show');}
+function closeExcelExportModal(){document.getElementById('excelExportModal').classList.remove('show');unlockBodyScroll();}
 function renderExcelExportList(){
   const kw=document.getElementById('excelExportSearch').value.trim().toLowerCase();
   const names=getFilteredOverview().map(d=>d.customer_name).filter(n=>!kw||n.toLowerCase().includes(kw));
@@ -1392,8 +1441,9 @@ function openExportModal(){
   }
   renderExportList();
   document.getElementById('exportModal').classList.add('show');
+  lockBodyScroll();
 }
-function closeExportModal(){document.getElementById('exportModal').classList.remove('show');}
+function closeExportModal(){document.getElementById('exportModal').classList.remove('show');unlockBodyScroll();}
 function renderExportList(){
   const kw=document.getElementById('exportSearch').value.trim().toLowerCase();
   const names=getFilteredOverview().map(d=>d.customer_name).filter(n=>!kw||n.toLowerCase().includes(kw));
@@ -1882,6 +1932,166 @@ function updateStatsWithTrend(trend){
   if(cards[2])cards[2].innerHTML+=trendHtml(trend.board);
   if(cards[3])cards[3].innerHTML+=trendHtml(trend.duration);
 }
+
+// ========== 自定义日期选择器（方案B） ==========
+let availableDates=new Set();
+let availableDateList=[];
+let dpActiveInput=null;
+let dpCurrentYear=0,dpCurrentMonth=0;
+
+async function loadAvailableDates(){
+  try{
+    const res=await api('/api/records/dates');
+    if(res.ok){
+      const dates=await res.json();
+      availableDates=new Set(dates);
+      availableDateList=dates;
+    }
+  }catch(e){console.warn('加载可用日期失败:',e);}
+}
+
+function hasDateInMonth(year,month){
+  const prefix=year+'-'+String(month+1).padStart(2,'0');
+  return availableDateList.some(d=>d.startsWith(prefix));
+}
+function getFirstAvailableMonth(){
+  if(availableDateList.length===0)return null;
+  const d=new Date(availableDateList[0]);
+  return {year:d.getFullYear(),month:d.getMonth()};
+}
+function getLastAvailableMonth(){
+  if(availableDateList.length===0)return null;
+  const d=new Date(availableDateList[availableDateList.length-1]);
+  return {year:d.getFullYear(),month:d.getMonth()};
+}
+
+function initCustomDatePicker(inputEl,onSelect){
+  inputEl.type='text';
+  inputEl.readOnly=true;
+  inputEl.classList.add('custom-date-input');
+  if(!inputEl.value)inputEl.classList.add('empty');
+
+  inputEl.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    showDatePicker(inputEl,onSelect);
+  });
+}
+
+function showDatePicker(inputEl,onSelect){
+  // 移除旧的弹窗
+  document.querySelectorAll('.date-picker-popup').forEach(p=>p.remove());
+  dpActiveInput=inputEl;
+
+  const popup=document.createElement('div');
+  popup.className='date-picker-popup show';
+  popup.innerHTML=`
+    <div class="date-picker-header">
+      <button class="dp-nav" data-dir="prev">‹</button>
+      <span class="dp-title"></span>
+      <button class="dp-nav" data-dir="next">›</button>
+    </div>
+    <div class="date-picker-weekdays">
+      <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+    </div>
+    <div class="date-picker-days"></div>
+    <div class="date-picker-footer">
+      <button class="dp-clear">清除</button>
+      <span class="dp-hint">灰色日期无记录</span>
+    </div>
+  `;
+  document.body.appendChild(popup);
+
+  // 定位
+  const rect=inputEl.getBoundingClientRect();
+  let top=rect.bottom+4;
+  let left=rect.left;
+  if(top+300>window.innerHeight)top=rect.top-304;
+  if(left+260>window.innerWidth)left=window.innerWidth-270;
+  popup.style.top=top+'px';
+  popup.style.left=left+'px';
+
+  // 初始月份
+  const val=inputEl.value;
+  if(val){
+    const d=new Date(val);
+    dpCurrentYear=d.getFullYear();dpCurrentMonth=d.getMonth();
+  }else{
+    const last=getLastAvailableMonth();
+    if(last){dpCurrentYear=last.year;dpCurrentMonth=last.month;}
+    else{const now=new Date();dpCurrentYear=now.getFullYear();dpCurrentMonth=now.getMonth();}
+  }
+
+  renderDatePicker(popup,onSelect);
+
+  // 导航
+  popup.querySelector('[data-dir="prev"]').addEventListener('click',()=>{
+    dpCurrentMonth--;if(dpCurrentMonth<0){dpCurrentMonth=11;dpCurrentYear--;}
+    renderDatePicker(popup,onSelect);
+  });
+  popup.querySelector('[data-dir="next"]').addEventListener('click',()=>{
+    dpCurrentMonth++;if(dpCurrentMonth>11){dpCurrentMonth=0;dpCurrentYear++;}
+    renderDatePicker(popup,onSelect);
+  });
+  popup.querySelector('.dp-clear').addEventListener('click',()=>{
+    inputEl.value='';inputEl.classList.add('empty');
+    if(onSelect)onSelect('');
+    closeDatePicker();
+  });
+  popup.addEventListener('click',e=>e.stopPropagation());
+}
+
+function renderDatePicker(popup,onSelect){
+  const title=popup.querySelector('.dp-title');
+  const daysEl=popup.querySelector('.date-picker-days');
+  const prevBtn=popup.querySelector('[data-dir="prev"]');
+  const nextBtn=popup.querySelector('[data-dir="next"]');
+
+  title.textContent=dpCurrentYear+'年'+(dpCurrentMonth+1)+'月';
+
+  // 导航按钮边界
+  const first=getFirstAvailableMonth(),last=getLastAvailableMonth();
+  if(first&&dpCurrentYear<=first.year&&dpCurrentMonth<=first.month)prevBtn.disabled=true;
+  else prevBtn.disabled=false;
+  if(last&&dpCurrentYear>=last.year&&dpCurrentMonth>=last.month)nextBtn.disabled=true;
+  else nextBtn.disabled=false;
+
+  const firstDay=new Date(dpCurrentYear,dpCurrentMonth,1).getDay();
+  const daysInMonth=new Date(dpCurrentYear,dpCurrentMonth+1,0).getDate();
+  const todayStr=formatDate(new Date());
+  const selectedVal=dpActiveInput?dpActiveInput.value:'';
+
+  let html='';
+  for(let i=0;i<firstDay;i++)html+='<div class="date-picker-day other-month"></div>';
+  for(let d=1;d<=daysInMonth;d++){
+    const dateStr=dpCurrentYear+'-'+String(dpCurrentMonth+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    const available=availableDates.has(dateStr);
+    let cls='date-picker-day '+(available?'available':'unavailable');
+    if(dateStr===todayStr)cls+=' today';
+    if(dateStr===selectedVal)cls+=' selected';
+    html+=`<div class="${cls}" data-date="${dateStr}" data-avail="${available?'1':'0'}">${d}</div>`;
+  }
+  daysEl.innerHTML=html;
+
+  daysEl.querySelectorAll('.date-picker-day.available').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const date=el.dataset.date;
+      dpActiveInput.value=date;dpActiveInput.classList.remove('empty');
+      if(onSelect)onSelect(date);
+      closeDatePicker();
+    });
+  });
+}
+
+function closeDatePicker(){
+  document.querySelectorAll('.date-picker-popup').forEach(p=>p.remove());
+  dpActiveInput=null;
+}
+document.addEventListener('click',closeDatePicker);
+
+// ========== 弹窗滚动隔离 ==========
+let modalOpenCount=0;
+function lockBodyScroll(){modalOpenCount++;document.body.classList.add('modal-open');}
+function unlockBodyScroll(){modalOpenCount=Math.max(0,modalOpenCount-1);if(modalOpenCount===0)document.body.classList.remove('modal-open');}
 
 // ========== 工具 ==========
 function updateDateRange(data, elementId, isDaily){

@@ -533,6 +533,29 @@ async function getTotalRecords() {
   return parseInt(result.rows[0].count);
 }
 
+// 获取所有有记录的日期（用于自定义日期选择器，无记录的日期不可选）
+async function getRecordDates(scope = null) {
+  let where = '';
+  const params = [];
+  if (scope && scope.customers) {
+    params.push(scope.customers);
+    where = `WHERE customer_name = ANY($${params.length}::text[])`;
+    if (scope.dateStart) { params.push(scope.dateStart); where += ` AND record_date >= $${params.length}`; }
+    if (scope.dateEnd) { params.push(scope.dateEnd); where += ` AND record_date <= $${params.length}`; }
+  } else if (scope && scope.dateStart) {
+    params.push(scope.dateStart);
+    where = `WHERE record_date >= $${params.length}`;
+    if (scope.dateEnd) { params.push(scope.dateEnd); where += ` AND record_date <= $${params.length}`; }
+  }
+  const result = await pool.query(`
+    SELECT DISTINCT record_date::date AS d
+    FROM spray_records
+    ${where}
+    ORDER BY d
+  `, params);
+  return result.rows.map(r => r.d.toISOString ? r.d.toISOString().slice(0,10) : String(r.d).slice(0,10));
+}
+
 // ========== 用户列配置（关联账号，登录后拉取） ==========
 async function getUserColConfig(userId) {
   const result = await pool.query('SELECT col_config FROM users WHERE id = $1', [userId]);
@@ -585,7 +608,7 @@ module.exports = {
   // 记录
   upsertRecords, upsertCustomerStats, listCustomers, getCustomerOverview,
   getCustomerRecords, getCustomerDailyAggregate, getPartsStats,
-  deleteCustomerRecords, getTotalRecords,
+  deleteCustomerRecords, getTotalRecords, getRecordDates,
   // 上传记录
   createUploadRecord, listUploadRecords, getUploadRecordById
 };

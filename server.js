@@ -74,7 +74,7 @@ const {
   getUserAccessScope,
   upsertRecords, upsertCustomerStats, listCustomers, getCustomerOverview,
   getCustomerRecords, getCustomerDailyAggregate, getPartsStats,
-  deleteCustomerRecords, getTotalRecords,
+  deleteCustomerRecords, getTotalRecords, getRecordDates,
   createUploadRecord, listUploadRecords, getUploadRecordById
 } = require('./db');
 
@@ -550,6 +550,17 @@ app.get('/api/daily/:customer', authRequired, async (req, res) => {
     res.json(data);
   } catch (err) {
     serverError(res, err, '获取日聚合数据失败');
+  }
+});
+
+// 获取所有有记录的日期（用于自定义日期选择器）
+app.get('/api/records/dates', authRequired, async (req, res) => {
+  try {
+    const scope = await getUserAccessScope(req.userId);
+    const dates = await getRecordDates(scope);
+    res.json(dates);
+  } catch (err) {
+    serverError(res, err, '获取记录日期失败');
   }
 });
 
